@@ -4,26 +4,16 @@ if (!require("readxl")) install.packages("readxl"); library("readxl")
 
 source("R/cleaners.R")
 
+#   Import table with base/price currencies, spread scales, tickers and countries
+gen_inf <- readxl::read_xlsx("Data/ds_data.xlsx", sheet = "fromto")
+
 df <- readxl::read_xlsx("Data/ds_data.xlsx", sheet = "quotes", skip = 1) |> 
   rename(date = `Code`) |> 
-  raw_to_basf() # Function that transforms raw data to a long tibble with identifiers for bid/ask and spot/forward.
+  raw_to_bidask() |> # Function that transforms raw data to a long tibble with identifiers for bid/ask.
+  fromto_scale(gen_inf, code, scale) |> # Function to join with general info tibble and scale all spreads.
+  select(-c(ticker, country)) |> # These columns will only be used later, after all currencies are directly quoted.
+  drop_na() # Drop missing prices observations
 
-#   When raw_to_basf pivots longer the data, all missing observations are preserved. Thus, we should have a tibble where
-# half the rows are bids, half are asks, half are spots, and half are forwards. Check if these 4 conditions hold
-df |> 
-  summarise(
-    bids  = sum(side == "bid") == nrow(df) / 2,
-    asks  = sum(side == "ask") == nrow(df) / 2,
-    spots = sum(mkt == "spot") == nrow(df) / 2,
-    fwds  = sum(mkt == "fwd") == nrow(df) / 2
-  )
-
-#   Import table with base/price currencies of each ticker
-fromto <- readxl::read_xlsx("Data/ds_data.xlsx", sheet = "fromto")
-
-df <- df |> 
-  fromto_scale(fromto, code, scale) |> 
-  drop_na(px)
 
 #   Isolate GBPSUD 1m
 gb_spr <- df |> 
@@ -36,7 +26,7 @@ gb_spr <- df |>
          side = if_else(side == "bid", "ask", "bid")) |> 
   select(-temp)
 
-df |> 
+usdgbp <- df |> 
   filter((from == "United Kingdom Pound" & to == "United States Dollar" & mkt == "spot") |
            (from == "United States Dollar" & to == "United Kingdom Pound" & mkt == "spot")) |> 
   bind_rows(gb_spr) |>
@@ -52,11 +42,20 @@ df |>
                names_sep = "_",
                values_to = "px")
 
-#   Filter indirectly quoted currencies and convert them to direct quotes
+#   
 df |> 
-  filter(to == "United Kingdom Pound")
-  filter(!(to %in% c("United States Dollar", "United Kingdom Pound"))) |> 
-  drop_na(px) |> #FIXME have to invert all the quotes to USD. Since some are quoted vs GBP, have to first isolate all of those 
+  filter( # Filter out USDGBP, since we already dealt with that.
+    !(
+      (from == "United States Dollar" & to == "United Kingdom Pound") |
+        (from == "United Kingdom Pound" & to == "United States Dollar")
+    )
+  ) |> 
+  filter(
+    from == "United Kingdom Pound" | to == "United Kingdom Pound"
+  ) |> 
+  select(-to) |> # A1: everything that is quoted vs GBP (excluding USD) is directly quoted
+  pivot_wider() 
+#FIXME have to invert all the quotes to USD. Since some are quoted vs GBP, have to first isolate all of those 
   mutate(
     px = if_else(mkt == "spr", -px, 1 / px)
     side =

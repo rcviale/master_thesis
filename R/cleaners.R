@@ -1,9 +1,9 @@
-raw_to_basf <- function(.data,
-                        .long_cols = c("code", "px"),
-                        .sep_delim = "(",
-                        .sep_into  = c("code", "side"),
-                        .bid_id    = "EB)",
-                        .fwd_end   = c("F", "1MFP", "1M")){
+raw_to_bidask <- function(.data,
+                          .long_cols = c("code", "px"),
+                          .sep_delim = "(",
+                          .sep_into  = c("code", "side"),
+                          .bid_id    = "EB)",
+                          .fwd_end   = c("F", "1MFP", "1M")){
   #   This function takes the raw data from DS and formats it into a long tibble with date, code, side, px, mkt
   #   Input: Codes of time series as headers, dates in the first column. Series for bids, asks, spots and forwards.
   
@@ -22,11 +22,6 @@ raw_to_basf <- function(.data,
     dplyr::mutate(
       date = lubridate::as_date(date), # Convert from datetime to date (since I use monthly data, time is not relevant).
       side = dplyr::if_else(side == .bid_id, "bid", "ask"), # Change bid/ask identifier column.
-      mkt = dplyr::if_else( # New column identifying forwards/spots by suffix: only F, 1MFP or 1M are forwards.
-        stringr::str_detect(code, "(F|1MFP|1M)$"),
-        "fwd",
-        "spot"
-      )
     )
   
 }
@@ -50,5 +45,30 @@ fromto_scale <- function(.data,
       # 3 identifiers: spot, spr (spread quotes) and fwd (outright quotes)
     ) |> 
     select(-c( {{ .by_col }}, {{ .scale_col }} )) # Drop name and scale column
+  
+}
+
+
+
+check_basf <- function(.data){
+  #   This function checks if half the observations are bids, asks, spots and forwards (including spreads).
+  
+  response <- .data |> 
+    summarise(
+      total_rows = n(),
+      n_bid      = sum(side == "bid"),
+      n_ask      = sum(side == "ask"),
+      n_spot     = sum(mkt == "spot"),
+      n_fwd_spr  = sum(mkt %in% c("fwd", "spr"))
+    ) |> 
+    mutate(
+      side_balanced  = (n_bid == n_ask),
+      mkt_balanced   = (n_spot == n_fwd_spr),
+      all_balanced   = (side_balanced == TRUE) & (mkt_balanced == TRUE)
+    ) |> 
+    pull(all_balanced)
+    
+
+  writeLines(paste0("Half bids/asks and spots/forwards: ", response))
   
 }
