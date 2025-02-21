@@ -3,6 +3,7 @@ if (!require("frenchdata")) install.packages("frenchdata"); library("frenchdata"
 if (!require("readxl")) install.packages("readxl"); library("readxl")
 
 source("R/cleaners.R")
+source("R/checkers.R")
 
 #   Import table with base/price currencies, spread scales, tickers and countries
 gen_inf <- readxl::read_xlsx("Data/ds_data.xlsx", sheet = "fromto")
@@ -14,9 +15,12 @@ df <- readxl::read_xlsx("Data/ds_data.xlsx", sheet = "quotes", skip = 1) |>
   select(-c(ticker, country)) |> # These columns will only be used later, after all currencies are directly quoted.
   drop_na() # Drop missing prices observations
 
+# C1: After these computations, but before dropping NAs, we should have 50% of observations being bids/asks/spots/forwards.
+readxl::read_xlsx("Data/ds_data.xlsx", sheet = "quotes", skip = 1) |> 
+  check1() # Ideal: 0
 
-#   Isolate GBPSUD 1m
-gb_spr <- df |> 
+#   Isolate USDGBP 1m forward spread and quote all of it directly
+gbp_spr <- df |> 
   filter((from == "United Kingdom Pound" & to == "United States Dollar" & mkt == "spr") |
            (from == "United States Dollar" & to == "United Kingdom Pound" & mkt == "spr")) |> 
   mutate(px   = -px,
@@ -26,11 +30,11 @@ gb_spr <- df |>
          side = if_else(side == "bid", "ask", "bid")) |> 
   select(-temp)
 
+#   Isolate USDGBP spot and forward quotes, compute outright forward quotes
 usdgbp <- df |> 
   filter((from == "United Kingdom Pound" & to == "United States Dollar" & mkt == "spot") |
            (from == "United States Dollar" & to == "United Kingdom Pound" & mkt == "spot")) |> 
-  bind_rows(gb_spr) |>
-  # select(-c(from, to))
+  bind_rows(gbp_spr) |>
   pivot_wider(names_from = c(side, mkt),
               names_sep = "_",
               values_from = px) |> 
@@ -40,26 +44,49 @@ usdgbp <- df |>
   pivot_longer(-c(date, from, to),
                names_to = c("side", "mkt"),
                names_sep = "_",
-               values_to = "px")
+               values_to = "px") |> 
+  drop_na()
 
-#   
-df |> 
+rm(gbp_spr)
+
+#   C2: All bids < asks
+usdgbp |> 
+  check2() # Ideal = 0
+
+#   Isolate all the quotes vs. GBP and compute the USDXXX cross rate
+gbpxxx <- df |> 
   filter( # Filter out USDGBP, since we already dealt with that.
     !(
       (from == "United States Dollar" & to == "United Kingdom Pound") |
         (from == "United Kingdom Pound" & to == "United States Dollar")
     )
   ) |> 
-  filter(
+  filter( # Filter everything that is quoted vs. GBP
     from == "United Kingdom Pound" | to == "United Kingdom Pound"
-  ) |> 
-  select(-to) |> # A1: everything that is quoted vs GBP (excluding USD) is directly quoted
-  pivot_wider() 
-#FIXME have to invert all the quotes to USD. Since some are quoted vs GBP, have to first isolate all of those 
+  ) |> # C3
+  select(-to) |> 
+  inner_join(usdgbp |> 
+               select(-c(from, to), 
+                      usdgbp = px),
+             by = join_by(date, side, mkt),
+             relationship = "many-to-one") |>
   mutate(
-    px = if_else(mkt == "spr", -px, 1 / px)
-    side =
-  )
+    px = px * usdgbp, # GBPXXX * USDGBP = USDXXX
+    to = "United States Dollar"
+  ) 
+
+#   C3: everything that is quoted vs GBP (excluding USD) is directly quoted
+df |> 
+  check3() # Ideal = 0
+
+#   C4: (sanity check) USDCHF mid spot cross rate should be ~.91 on 31/01/2025 (Yahoo! Finance value)
+gbpxxx |> 
+  check4() # Ideal = .91
+
+mutate(
+  px = if_else(mkt == "spr", -px, 1 / px)
+  side =
+)
 # filter(!(to %in% c("United States Dollar", "United Kingdom Pound"))) |>
 pivot_wider(names_from = c(mkt, side), 
             names_sep = "_",
