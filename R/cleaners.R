@@ -50,25 +50,3 @@ fromto_scale <- function(.data,
 
 
 
-check_basf <- function(.data){
-  #   This function checks if half the observations are bids, asks, spots and forwards (including spreads).
-  
-  response <- .data |> 
-    summarise(
-      total_rows = n(),
-      n_bid      = sum(side == "bid"),
-      n_ask      = sum(side == "ask"),
-      n_spot     = sum(mkt == "spot"),
-      n_fwd_spr  = sum(mkt %in% c("fwd", "spr"))
-    ) |> 
-    mutate(
-      side_balanced  = (n_bid == n_ask),
-      mkt_balanced   = (n_spot == n_fwd_spr),
-      all_balanced   = (side_balanced == TRUE) & (mkt_balanced == TRUE)
-    ) |> 
-    pull(all_balanced)
-    
-
-  writeLines(paste0("Half bids/asks and spots/forwards: ", response))
-  
-}
