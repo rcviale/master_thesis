@@ -51,7 +51,7 @@ check2 <- function(.data){
 
 
 
-check3 <- function(.data){
+check31 <- function(.data){
   #   This function checks that all currencies with GBP on one side (excluding USD) are directly quoted. 
   
   response <- .data |> 
@@ -75,6 +75,30 @@ check3 <- function(.data){
 
 
 
+check32 <- function(.data){
+  #   This function checks that all currencies with GBP on one side (excluding USD) are not spread quoted. 
+  
+  response <- .data |> 
+    filter( # Filter out USDGBP, since we already dealt with that.
+      !(
+        (from == "United States Dollar" & to == "United Kingdom Pound") |
+          (from == "United Kingdom Pound" & to == "United States Dollar")
+      )
+    ) |> 
+    filter( # Filter everything that is quoted vs. GBP
+      from == "United Kingdom Pound" | to == "United Kingdom Pound"
+    ) |> 
+    summarise(
+      spreads = sum(mkt == "spr")
+    ) |> 
+    pull(spreads)
+  
+  writeLines(paste0("Amount of spread quotes with GBP: ", response))
+  
+}
+
+
+
 check4 <- function(.data){
   #   This function checks that the mid (bid and ask mean) spot USDCHF cross rate on 31/01/2025 is ~0.91
   
@@ -85,5 +109,30 @@ check4 <- function(.data){
     round(2)
   
   writeLines(paste0("Mid spot USDCHF cross rate: ", response))
+  
+}
+
+
+
+check5 <- function(.data){
+  # This function
+  
+  response <- .data |> 
+    filter( # Filter out USDGBP, since we already dealt with that.
+      !(
+        (from == "United States Dollar" & to == "United Kingdom Pound") |
+          (from == "United Kingdom Pound" & to == "United States Dollar")
+      )
+    ) |> 
+    filter( # Filter out everything that is quoted vs. GBP, since we already dealt with that.
+      !(from == "United Kingdom Pound" | to == "United Kingdom Pound")
+    ) |>
+    filter( # Filter everything that is indirectly quoted vs. USD, but not GBP
+      from == "United States Dollar" & to != "United Kingdom Pound"
+    ) |> 
+    filter(mkt == "spr") |> 
+    nrow()
+  
+  writeLines(paste0("Amount of spreads indirectly quoted vs. USD: ", response))
   
 }
