@@ -159,12 +159,15 @@ df |>
   filter( # Filter every spread quoted vs. USD
     to == "United States Dollar" & mkt == "spr"
   ) |> 
-  inner_join(
+  inner_join( # Join with respective spot quotes 
     usdx_spr_spots,
     by = join_by(date, side, from)
   ) |> 
   mutate(
-    px = spot + px
+    px  = spot + px, # Compute outright forward quotes
+    mkt = if_else(mkt == "spr", "fwd", mkt) # Change mkt identifier
   ) |> 
-  bind_rows(usdx)
+  select(-spot) |> # Remove column
+  bind_rows(usdx) |> # Combine with the other subsets
+  write_rds("Data/all_outright.rds") # Save as rds
 
