@@ -50,3 +50,64 @@ fromto_scale <- function(.data,
 
 
 
+direct_quote <- function(.data,
+                         .spread = TRUE){
+  #   This function takes indirect quotes and turns them into direct ones.
+  
+  temp <- .data |> 
+    dplyr::pull(from)
+  
+  if (.spread == TRUE) {
+    
+    .data |> 
+      dplyr::mutate(
+        px   = -px,
+        from = to,
+        to   = temp,
+        side = dplyr::if_else(side == "bid", "ask", "bid")
+      )
+    
+  } else { 
+    
+    .data |> 
+      dplyr::mutate(
+        px   = 1 / px,
+        from = to,
+        to   = temp,
+        side = dplyr::if_else(side == "bid", "ask", "bid")
+      )
+    
+  }
+  
+}
+
+
+
+lustig_cleaning <- function(.data){
+  #   Based on large failures of covered interest rate parity, we chose to delete the following observations from 
+  # our sample: 
+  #   - South Africa from the end of July 1985 to the end of August 1985; 
+  #   - Malaysia from the end of August 1998 to the end of June 2005; 
+  #   - Indonesia from the end of December 2000 to the end of May 2007; 
+  #   - Turkey from the end of October 2000 to the end of November 2001; 
+  #   - United Arab Emirates from the end of June 2006 to the end of November 2006. 
+  
+  .data |> 
+    dplyr::filter(
+      # South Africa from the end of July 1985 to the end of August 1985
+      !(from == "South African Rand" & date >= "1985-07-01" & date <= "1985-08-31") &
+        
+        # Malaysia from the end of August 1998 to the end of June 2005
+        !(from == "Malaysian Ringgit" & date >= "1998-08-01" & date <= "2005-06-30") & 
+        
+        # Indonesia from the end of December 2000 to the end of May 2007
+        !(from == "Indonesian Rupiah" & date >= "2000-12-01" & date <= "2007-05-31") & 
+        
+        # Turkey from the end of October 2000 to the end of November 2001
+        !(from == "Turkish Lira" & date >= "2000-10-01" & date <= "2001-11-30") & 
+        
+        # United Arab Emirates from the end of June 2006 to the end of November 2006
+        !(from == "United Arab Emirates Dirham" & date >= "2006-06-01" & date <= "2006-11-30")
+    )
+  
+}
