@@ -19,16 +19,11 @@ df <- readxl::read_xlsx("Data/ds_data.xlsx", sheet = "quotes", skip = 1) |>
 readxl::read_xlsx("Data/ds_data.xlsx", sheet = "quotes", skip = 1) |> 
   check1() # Ideal: 0
 
-#   Isolate USDGBP 1m forward spread and quote all of it directly and outright (USDGBP fwd is spread quoted originally)
+#   Isolate USDGBP 1m forward spread and quote it directly and outright (USDGBP fwd is spread quoted originally)
 gbp_spr <- df |> 
   filter((from == "United Kingdom Pound" & to == "United States Dollar" & mkt == "spr") |
            (from == "United States Dollar" & to == "United Kingdom Pound" & mkt == "spr")) |> 
-  mutate(px   = -px,
-         temp = from,
-         from = to,
-         to   = temp,
-         side = if_else(side == "bid", "ask", "bid")) |> 
-  select(-temp)
+  direct_quote(.spread = TRUE)
 
 #   Isolate USDGBP spot and forward quotes, compute outright forward quotes
 usdgbp <- df |> 
@@ -171,3 +166,6 @@ df |>
   bind_rows(usdx) |> # Combine with the other subsets
   write_rds("Data/all_outright.rds") # Save as rds
 
+#   Lustig et al. cleaning
+read_rds("Data/all_outright.rds") |> 
+  lustig_cleaning()
