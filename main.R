@@ -163,9 +163,24 @@ df |>
     mkt = if_else(mkt == "spr", "fwd", mkt) # Change mkt identifier
   ) |> 
   select(-spot) |> # Remove column
-  bind_rows(usdx) |> # Combine with the other subsets
-  write_rds("Data/all_outright.rds") # Save as rds
+  bind_rows(usdx) |> # Combine with the other subset
+  select(-to) |> # Remove to column, as everything is to USD now
+  write_rds("Data/all_outright.rds") # Save as .rds
 
-#   Lustig et al. cleaning
-read_rds("Data/all_outright.rds") |> 
-  lustig_cleaning()
+#   Lustig et al. cleaning and returns computation
+read_rds("Data/all_outright.rds") |>  
+  lustig_cleaning() |> 
+  lustig_returns() |> 
+  write_rds("Data/returns.rds")
+
+# 
+read_rds("Data/returns.rds") |> 
+  mutate(
+    fwd_disc = fwd.bid - spot.ask,
+    mom1     = lag(rl),
+    mom3     = slider::slide_dbl(.x = rl, .f = sum, .before = 10) |> lag(),
+    mom6     = slider::slide_dbl(.x = rl, .f = sum, .before = 10) |> lag(),
+    mom12    = slider::slide_dbl(.x = rl, .f = sum, .before = 10) |> lag()
+  )
+
+
