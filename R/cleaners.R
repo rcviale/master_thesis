@@ -83,6 +83,108 @@ direct_quote <- function(.data,
 
 
 
+keep_usdgbp <- function(.data,
+                        .keep = FALSE){
+  #   This function filters out the USDGBP pair or isolates it.
+  
+  if (.keep == FALSE){
+    
+    .data |> 
+      filter(
+        !(
+          (from == "United States Dollar" & to == "United Kingdom Pound") |
+            (from == "United Kingdom Pound" & to == "United States Dollar")
+        )
+      )
+    
+  } else {
+    
+    .data |> 
+      filter(
+        (from == "United States Dollar" & to == "United Kingdom Pound") |
+          (from == "United Kingdom Pound" & to == "United States Dollar")
+      )
+    
+  }
+  
+}
+
+
+
+spr_to_outright <- function(.data,
+                            .froms){
+  #   This function converts spreads to outright quotes. Returns a tibble with the outright and spot quotes.
+  
+  if (.froms == "United Kingdom Pound"){
+    
+    # Add USD to the .froms vector
+    .froms <- c(.froms, "United States Dollar")
+    
+    spots <-  .data |> 
+      dplyr::filter(from %in% .froms & to %in% .froms & mkt == "spot") 
+    
+    #   Isolate the USDGBP indirect spread quotes and turn it into a direct spread.
+    .data <- .data |> 
+      dplyr::filter(from %in% .froms & to %in% .froms & mkt == "spr") |> 
+      direct_quote(.spread = TRUE) 
+    
+  } else {
+    
+    spots <- .data |> 
+      dplyr::filter(from %in% .froms & mkt == "spot")
+    
+  }
+  
+  spots_to_join <- spots |> 
+    dplyr::select(-c(to, mkt),
+                  spot = px)
+  
+  .data |> 
+    dplyr::inner_join( # Join with respective spot quotes 
+      spots_to_join,
+      by = dplyr::join_by(date, side, from)
+    ) |> 
+    dplyr::mutate(
+      px  = spot + px, # Compute outright forward quotes
+      mkt = if_else(mkt == "spr", "fwd", mkt) # Change mkt identifier
+    ) |> 
+    dplyr::select(-spot) |> # Remove column
+    dplyr::bind_rows(spots)
+  
+}
+
+
+
+cross_to_usd <- function(.data,
+                         .cross = usdgbp,
+                         .to = "United Kingdom Pound"){
+  #   This function converts all quotes in .from currency to USD. 
+  #   Only for direct quotes (no pair with GBP is indirect, except for USDGBP, which was separately treated).
+  
+  .cross <- .cross |> 
+    dplyr::select(-c(from, to), 
+           cross = px)
+  
+  .data |> 
+    dplyr::filter( # Filter everything that is quoted vs. GBP
+      to == .to
+    ) |> # C3.1
+    dplyr::select(-to) |> 
+    dplyr::inner_join(
+      .cross,
+      by = dplyr::join_by(date, side, mkt),
+      relationship = "many-to-one"
+    ) |>
+    dplyr::mutate( # C3.2
+      px = px * cross, # GBPXXX * USDGBP = USDXXX
+      to = "United States Dollar"
+    ) |> 
+    dplyr::select(-cross)
+  
+}
+
+
+
 lustig_cleaning <- function(.data){
   #   Based on large failures of covered interest rate parity, we chose to delete the following observations from 
   # our sample: 
