@@ -1,4 +1,6 @@
-# Factor Timing in Currency Markets
+# Factor Timing in Currency Markets (provisional)
+
+This repository contains the codes for my Master thesis in Quantitative Finance at WU Vienna: "Factor Timing in Currency Markets" (provisional title).
 
 ## Untimed Strategies
 - **Dollar**: $1/N$ of all currencies
