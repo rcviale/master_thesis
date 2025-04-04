@@ -11,7 +11,9 @@ lustig_returns <- function(.data,
     dplyr::group_by(from) |> 
     dplyr::mutate(
       rl = dplyr::lag(fwd.bid) - spot.ask,
-      rs = -dplyr::lag(fwd.ask) + spot.bid
+      rs = -dplyr::lag(fwd.ask) + spot.bid,
+      # rl = fwd.bid - dplyr::lead(spot.ask),
+      # rs = -fwd.ask + dplyr::lead(spot.bid)
     ) |> 
     dplyr::ungroup() |> 
     tidyr::drop_na(rl, rs)
