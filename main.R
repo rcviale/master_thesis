@@ -4,6 +4,7 @@ if (!require("readxl")) install.packages("readxl"); library("readxl")
 
 source("R/cleaners.R")
 source("R/checkers.R")
+source("R/helpers.R")
 
 #   Import table with base/price currencies, spread scales, tickers and countries
 gen_inf <- readxl::read_xlsx("Data/ds_data.xlsx", sheet = "fromto")
@@ -174,13 +175,28 @@ read_rds("Data/all_outright.rds") |>
   write_rds("Data/returns.rds")
 
 # 
-read_rds("Data/returns.rds") |> 
+read_rds("Data/returns.rds") |>
+  # rl = the return I get in month t+1 for going long in month t
+  # fwd_disc = the carry I observe in month t and expect to get in month t+1
+  # => fwd_disc is the expectation, rl is what realized
   mutate(
-    fwd_disc = fwd.bid - spot.ask,
+    fwd_disc = fwd.bid - spot.ask, # Carry
+  ) |> 
+  group_by(from) |> 
+  mutate(
+    # Momentum
     mom1     = lag(rl),
-    mom3     = slider::slide_dbl(.x = rl, .f = sum, .before = 10) |> lag(),
-    mom6     = slider::slide_dbl(.x = rl, .f = sum, .before = 10) |> lag(),
-    mom12    = slider::slide_dbl(.x = rl, .f = sum, .before = 10) |> lag()
+    mom3     = slider::slide_dbl(.x = rl, .f = sum, .before = 2, .complete = TRUE) |> lag(),
+    mom6     = slider::slide_dbl(.x = rl, .f = sum, .before = 5, .complete = TRUE) |> lag(),
+    mom12    = slider::slide_dbl(.x = rl, .f = sum, .before = 10, .complete = TRUE) |> lag()
+  ) |> 
+  group_by(date) |> 
+  mutate(
+    avg_fd = mean(fwd_disc) # Dollar Carry
   )
+
+
+
+
 
 
