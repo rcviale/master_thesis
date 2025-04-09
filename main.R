@@ -109,10 +109,12 @@ read_rds("Data/all_outright.rds") |>
   lustig_returns() |> 
   write_rds("Data/returns.rds")
 
+rm(list = ls())
+
 # 
-read_rds("Data/returns.rds") |>
-  # rl = the return I get in month t+1 for going long in month t
-  # fwd_disc = the carry I observe in month t and expect to get in month t+1
+df <- read_rds("Data/returns.rds") |>
+  # rl_t = the return I get in month t+1 for going long in month t
+  # fwd_disc_t = the carry I observe in month t and expect to get in month t+1
   # => fwd_disc is the expectation, rl is what realized
   mutate(
     fwd_disc = fwd.bid - spot.ask, # Carry
@@ -127,11 +129,14 @@ read_rds("Data/returns.rds") |>
   ) |> 
   group_by(date) |> 
   mutate(
-    avg_fd = mean(fwd_disc) # Dollar Carry
-  )
+    avg_fd = mean(fwd_disc), # Dollar Carry
+    N      = n()
+  ) 
 
+df
 
+p <- df |>
+  ggplot(aes(x = date, y = N)) + 
+  geom_line()
 
-
-
-
+plotly::ggplotly(p)
