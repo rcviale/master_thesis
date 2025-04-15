@@ -83,7 +83,7 @@ direct_quote <- function(.data,
 
 
 
-keep_usdgbp <- function(.data,
+drop_usdgbp <- function(.data,
                         .keep = FALSE){
   #   This function filters out the USDGBP pair or isolates it.
   
@@ -112,26 +112,39 @@ keep_usdgbp <- function(.data,
 
 
 spr_to_outright <- function(.data,
-                            .froms){
+                            .froms,
+                            .new_spots = NULL){
   #   This function converts spreads to outright quotes. Returns a tibble with the outright and spot quotes.
   
-  if (.froms == "United Kingdom Pound"){
+  
+  # Chunk to deal with USD GBP
+  if (sum(.froms == "United Kingdom Pound") > 0){
     
     # Add USD to the .froms vector
     .froms <- c(.froms, "United States Dollar")
     
+    # Isolate the spot rates
     spots <-  .data |> 
       dplyr::filter(from %in% .froms & to %in% .froms & mkt == "spot") 
     
-    #   Isolate the USDGBP indirect spread quotes and turn it into a direct spread.
+    # Isolate the USDGBP indirect spread quotes and turn it into a direct spread.
     .data <- .data |> 
       dplyr::filter(from %in% .froms & to %in% .froms & mkt == "spr") |> 
       direct_quote(.spread = TRUE) 
-    
+  
+  # Chunk to deal with spreads vs. USD
   } else {
     
+    # Filter only the new spot (cross) rates of the currencies that have spread quoted forwards
+    .new_spots <- .new_spots |> 
+      dplyr::filter(from %in% .froms)
+    
     spots <- .data |> 
-      dplyr::filter(from %in% .froms & mkt == "spot")
+      dplyr::filter(from %in% .froms & mkt == "spot" & to == "United States Dollar") |> 
+      dplyr::bind_rows(.new_spots)
+    
+    .data <- .data |> 
+      dplyr::filter(from %in% .froms & mkt == "spr")
     
   }
   
