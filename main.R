@@ -32,7 +32,7 @@ usdgbp |>
 
 #   Isolate all the quotes vs. GBP and compute the USDXXX cross rate
 gbpx <- df |> 
-  keep_usdgbp() |>  # Filter out USDGBP, since we already dealt with that.
+  drop_usdgbp() |>  # Filter out USDGBP, since we already dealt with that.
   cross_to_usd()
 
 #   C3.1: everything that is quoted vs GBP (excluding USD) is directly quoted
@@ -49,7 +49,7 @@ gbpx |>
 
 #   Isolate all indirect quotes vs. USD and convert to direct ones. 
 xusd <- df |> 
-  keep_usdgbp() |>  # Filter out USDGBP, since we already dealt with that.
+  drop_usdgbp() |>  # Filter out USDGBP, since we already dealt with that.
   filter( # Filter everything that is indirectly quoted vs. USD
     from == "United States Dollar"
   ) |> 
@@ -59,47 +59,35 @@ xusd <- df |>
 df |> 
   check5()
 
-#   Isolate non-spread direct quotes vs. USD and join them with all the other sets created so far
-usdx <- df |> 
-  keep_usdgbp() |>  # Filter out USDGBP, since we already dealt with that.
-  filter(to == "United States Dollar" & mkt != "spr") |> 
-  bind_rows(xusd, gbpx, usdgbp)
-
-rm(xusd, gbpx, usdgbp)
+# #   Isolate outright direct quotes vs. USD and join them with all the other sets created so far, which are now
+# # all outright and directly quoted.
+# usdx <- df |>
+#   drop_usdgbp() |>  # Filter out USDGBP, since we already dealt with that.
+#   filter(to == "United States Dollar" & mkt != "spr") |>
+#   bind_rows(xusd, gbpx, usdgbp)
+# 
+# # rm(xusd, gbpx, usdgbp)
 
 #   Isolate the names of the currencies that have spreads directly quoted vs. USD
 usd_spr_crncy <- df |> 
-  keep_usdgbp() |>  # Filter out USDGBP, since we already dealt with that.
+  drop_usdgbp() |>  # Filter out USDGBP, since we already dealt with that.
   filter( # Filter every spread quoted vs. USD
     to == "United States Dollar" & mkt == "spr"
   ) |> 
   pull(from) |> 
   unique()
 
-#   Isolate the spot rates for the currencies which have spread quotes vs. USD
-usdx_spr_spots <- usdx |> 
-  filter(from %in% usd_spr_crncy) |> 
-  select(-c(to, mkt),
-         spot = px)
+usdx_spr <- df |> 
+  drop_usdgbp() |>  # Filter out USDGBP, since we already dealt with that.
+  spr_to_outright(.froms = usd_spr_crncy, .new_spots = gbpx)
 
-rm(usd_spr_crncy)
+gbpx <- gbpx |> 
+  filter(!(from %in% usd_spr_crncy))
 
-#   Isolate the spreads directly quoted vs. USD, join with spot rates and compute outright prices
 df |> 
-  keep_usdgbp() |>  # Filter out USDGBP, since we already dealt with that.
-  filter( # Filter every spread quoted vs. USD
-    to == "United States Dollar" & mkt == "spr"
-  ) |> 
-  inner_join( # Join with respective spot quotes 
-    usdx_spr_spots,
-    by = join_by(date, side, from)
-  ) |> 
-  mutate(
-    px  = spot + px, # Compute outright forward quotes
-    mkt = if_else(mkt == "spr", "fwd", mkt) # Change mkt identifier
-  ) |> 
-  select(-spot) |> # Remove column
-  bind_rows(usdx) |> # Combine with the other subset
+  drop_usdgbp() |> 
+  filter(to == "United States Dollar" & mkt != "spr" & !(from %in% usd_spr_crncy)) |> 
+  bind_rows(xusd, usdgbp, usdx_spr, gbpx) |> 
   select(-to) |> # Remove to column, as everything is to USD now
   write_rds("Data/all_outright.rds") # Save as .rds
 
