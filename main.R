@@ -13,7 +13,7 @@ df <- readxl::read_xlsx("Data/ds_data.xlsx", sheet = "quotes", skip = 1) |>
   rename(date = `Code`) |> 
   raw_to_bidask() |> # Function that transforms raw data to a long tibble with identifiers for bid/ask.
   fromto_scale(gen_inf, code, scale) |> # Function to join with general info tibble and scale all spreads.
-  select(-c(ticker, country)) |> # These columns will only be used later, after all currencies are directly quoted.
+  select(-c(ticker, country, eudate)) |> # These columns will only be used later, after all currencies are directly quoted.
   drop_na() # Drop missing prices observations
 
 # C1: After these computations, but before dropping NAs, we should have 50% of observations being bids/asks/spots/forwards.
@@ -25,10 +25,6 @@ usdgbp <- df |>
   spr_to_outright(.froms = "United Kingdom Pound")
 
 rm(gbp_spr)
-
-#   C2: All bids < asks
-usdgbp |> 
-  check2() # Ideal = 0
 
 #   Isolate all the quotes vs. GBP and compute the USDXXX cross rate
 gbpx <- df |> 
@@ -59,15 +55,6 @@ xusd <- df |>
 df |> 
   check5()
 
-# #   Isolate outright direct quotes vs. USD and join them with all the other sets created so far, which are now
-# # all outright and directly quoted.
-# usdx <- df |>
-#   drop_usdgbp() |>  # Filter out USDGBP, since we already dealt with that.
-#   filter(to == "United States Dollar" & mkt != "spr") |>
-#   bind_rows(xusd, gbpx, usdgbp)
-# 
-# # rm(xusd, gbpx, usdgbp)
-
 #   Isolate the names of the currencies that have spreads directly quoted vs. USD
 usd_spr_crncy <- df |> 
   drop_usdgbp() |>  # Filter out USDGBP, since we already dealt with that.
@@ -77,23 +64,42 @@ usd_spr_crncy <- df |>
   pull(from) |> 
   unique()
 
+#   Convert all spreads quoted vs. USD to outright quotes.
 usdx_spr <- df |> 
   drop_usdgbp() |>  # Filter out USDGBP, since we already dealt with that.
-  spr_to_outright(.froms = usd_spr_crncy, .new_spots = gbpx)
+  spr_to_outright(.froms = usd_spr_crncy, 
+                  .new_spots = gbpx) # New spots argument has the spot cross rates for the currencies which were 
+# originally quoted vs. GBP.
 
+#   Some currencies had spots quoted vs. GBP. To avoid double entries, we filter those out, as they were included in
+# the usdx_spr tibble through the .new_spots argument.
 gbpx <- gbpx |> 
   filter(!(from %in% usd_spr_crncy))
 
+#   Join all tibbles and save RDS.
 df |> 
-  drop_usdgbp() |> 
-  filter(to == "United States Dollar" & mkt != "spr" & !(from %in% usd_spr_crncy)) |> 
+  drop_usdgbp() |> # Filter out USDGBP, since we already dealt with that.
+  filter(to == "United States Dollar" & mkt != "spr" & !(from %in% usd_spr_crncy)) |> # Filter all direct quotes vs.
+  # USD which are not spreads and are not in the spread-quoted currencies list (i.e, they are quoted directly and as
+  # outright).
   bind_rows(xusd, usdgbp, usdx_spr, gbpx) |> 
   select(-to) |> # Remove to column, as everything is to USD now
+  arrange(date, from) |> 
   write_rds("Data/all_outright.rds") # Save as .rds
 
-#   Lustig et al. cleaning and returns computation
+#   C2: All bids < asks
 read_rds("Data/all_outright.rds") |>  
-  lustig_cleaning() |> 
+  check2() # Ideal = 0
+
+#   Get tibble with the dates in which Eurozone countries joined the monetary union.
+eudates <- gen_inf |> 
+  get_eu_dates()
+
+#   Drop all observations where bid > ask (in long format, 550/107013) and implement Lustig et al. cleaning 
+# and returns computation
+read_rds("Data/all_outright.rds") |>  
+  drop_bad_bid_asks() |> 
+  lustig_cleaning(eudates) |> 
   lustig_returns() |> 
   write_rds("Data/returns.rds")
 
