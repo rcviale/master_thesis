@@ -34,17 +34,18 @@ fromto_scale <- function(.data,
   #   This function joins the quotes data with the table containing information on the from/to and the spreads scales.
   
   .data |> 
-    left_join(
+    dplyr::left_join(
       y            = .fromto,
-      by           = join_by( {{ .by_col }} ),
+      by           = dplyr::join_by( {{ .by_col }} ),
       relationship = "many-to-one" # Each row in df has to match at most 1 row in fromto.
     ) |> 
-    mutate(
-      px  = ifelse(!is.na( {{ .scale_col }} ), px / {{ .scale_col }}, px), # Scale spreads according to scale (outrights are NA).
-      mkt = ifelse(!is.na( {{ .scale_col }} ), "spr", mkt) # Identify spreads in mkt column. After this, mkt column contains 
-      # 3 identifiers: spot, spr (spread quotes) and fwd (outright quotes)
+    dplyr::mutate(
+      px  = dplyr::if_else(!is.na( {{ .scale_col }} ), px / {{ .scale_col }}, px), # Scale spreads according to scale 
+      # (outrights are NA).
+      mkt = dplyr::if_else(!is.na( {{ .scale_col }} ), "spr", mkt) # Identify spreads in mkt column. After this, mkt column 
+      # contains 3 identifiers: spot, spr (spread quotes) and fwd (outright quotes)
     ) |> 
-    select(-c( {{ .by_col }}, {{ .scale_col }} )) # Drop name and scale column
+    dplyr::select(-c( {{ .by_col }}, {{ .scale_col }} )) # Drop name and scale column
   
 }
 
@@ -115,7 +116,9 @@ spr_to_outright <- function(.data,
                             .froms,
                             .new_spots = NULL){
   #   This function converts spreads to outright quotes. Returns a tibble with the outright and spot quotes.
-  
+  #   .froms is a character vector with the names of the currencies that are quoted as spreads.
+  #   .new_spots is a tibble with the spot cross rates for currencies which were didn't have spots originally quoted
+  # vs. USD (they had GBP on the other side).
   
   # Chunk to deal with USD GBP
   if (sum(.froms == "United Kingdom Pound") > 0){
@@ -131,23 +134,26 @@ spr_to_outright <- function(.data,
     .data <- .data |> 
       dplyr::filter(from %in% .froms & to %in% .froms & mkt == "spr") |> 
       direct_quote(.spread = TRUE) 
-  
-  # Chunk to deal with spreads vs. USD
+    
+    # Chunk to deal with spreads vs. USD
   } else {
     
     # Filter only the new spot (cross) rates of the currencies that have spread quoted forwards
     .new_spots <- .new_spots |> 
       dplyr::filter(from %in% .froms)
     
+    # Filter only the spots vs. USD (the ones vs. GBP are in .new_spots)
     spots <- .data |> 
       dplyr::filter(from %in% .froms & mkt == "spot" & to == "United States Dollar") |> 
       dplyr::bind_rows(.new_spots)
     
+    # Filter only the spreads
     .data <- .data |> 
       dplyr::filter(from %in% .froms & mkt == "spr")
     
   }
   
+  # Drops columns before joining the spots with the spreads
   spots_to_join <- spots |> 
     dplyr::select(-c(to, mkt),
                   spot = px)
@@ -162,7 +168,7 @@ spr_to_outright <- function(.data,
       mkt = if_else(mkt == "spr", "fwd", mkt) # Change mkt identifier
     ) |> 
     dplyr::select(-spot) |> # Remove column
-    dplyr::bind_rows(spots)
+    dplyr::bind_rows(spots) # Reinclude the spot rates
   
 }
 
@@ -176,7 +182,7 @@ cross_to_usd <- function(.data,
   
   .cross <- .cross |> 
     dplyr::select(-c(from, to), 
-           cross = px)
+                  cross = px)
   
   .data |> 
     dplyr::filter( # Filter everything that is quoted vs. GBP
@@ -198,7 +204,43 @@ cross_to_usd <- function(.data,
 
 
 
-lustig_cleaning <- function(.data){
+drop_bad_bid_asks <- function(.data){
+  #   This function drops all the observations where bid > ask.
+  
+  .data |> 
+    tidyr::pivot_wider(
+      names_from  = side,
+      values_from = px
+    ) |> 
+    # Keep only observations where bid < ask or one of them is NA.
+    dplyr::filter(!(bid > ask) | is.na(bid > ask)) |> 
+    tidyr::pivot_longer(
+      cols = c(bid, ask),
+      names_to = "side",
+      values_to = "px"
+    ) |> 
+    # When pivoting longer the implicit NAs become explicit, so we drop them.
+    tidyr::drop_na(px)
+  
+}
+
+
+
+get_eu_dates <- function(.data){
+  #   This function retrieves the dates in which each country in the Eurozone joined the monetary union.
+  
+  .data |> 
+    dplyr::select(from, eudate) |> 
+    dplyr::mutate(eudate = lubridate::as_date(eudate)) |> 
+    tidyr::drop_na() |> 
+    dplyr::distinct()
+  
+}
+
+
+
+lustig_cleaning <- function(.data,
+                            .eudates){
   #   Based on large failures of covered interest rate parity, we chose to delete the following observations from 
   # our sample: 
   #   - South Africa from the end of July 1985 to the end of August 1985; 
@@ -208,9 +250,19 @@ lustig_cleaning <- function(.data){
   #   - United Arab Emirates from the end of June 2006 to the end of November 2006. 
   
   .data |> 
+    # Join with Eurozone joining dates
+    dplyr::left_join(
+      eudates,
+      dplyr::join_by(from),
+      relationship = "many-to-one"
+    ) |> 
     dplyr::filter(
-      # South Africa from the end of July 1985 to the end of August 1985
-      !(from == "South African Rand" & date >= "1985-07-01" & date <= "1985-08-31") &
+      # For Eurozone currencies, keep observations before they joined the monetary union
+      # For non-Eurozone do nothing (eudate == NA)
+      ( (date < eudate) | is.na(eudate) )  &
+        
+        # South Africa from the end of July 1985 to the end of August 1985
+        !(from == "South African Rand" & date >= "1985-07-01" & date <= "1985-08-31") &
         
         # Malaysia from the end of August 1998 to the end of June 2005
         !(from == "Malaysian Ringgit" & date >= "1998-08-01" & date <= "2005-06-30") & 
@@ -223,6 +275,7 @@ lustig_cleaning <- function(.data){
         
         # United Arab Emirates from the end of June 2006 to the end of November 2006
         !(from == "United Arab Emirates Dirham" & date >= "2006-06-01" & date <= "2006-11-30")
-    )
+    ) |> 
+    dplyr::select(-eudate)
   
 }
