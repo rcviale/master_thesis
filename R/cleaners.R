@@ -204,10 +204,10 @@ cross_to_usd <- function(.data,
 
 
 
-drop_bad_bid_asks <- function(.data){
+drop_bad_bidask <- function(.data){
   #   This function drops all the observations where bid > ask.
   
-  .data |> 
+  df <- .data |> 
     tidyr::pivot_wider(
       names_from  = side,
       values_from = px
@@ -221,6 +221,13 @@ drop_bad_bid_asks <- function(.data){
     ) |> 
     # When pivoting longer the implicit NAs become explicit, so we drop them.
     tidyr::drop_na(px)
+  
+  writeLines(paste0(nrow(.data) - nrow(df), 
+                    " (", 
+                    round(nrow(df) / nrow(.data), 2),
+                    "%) observations were dropped due to bid > ask."))
+  
+  df
   
 }
 
