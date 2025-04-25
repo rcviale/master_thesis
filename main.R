@@ -1,10 +1,9 @@
-if (!require("tidyverse")) install.packages("tidyverse"); library("tidyverse")
-if (!require("frenchdata")) install.packages("frenchdata"); library("frenchdata")
-if (!require("readxl")) install.packages("readxl"); library("readxl")
+source("R/startup.R")
 
 source("R/cleaners.R")
 source("R/checkers.R")
-source("R/helpers.R")
+
+##### Data Processing & Cleaning #####
 
 #   Import table with base/price currencies, spread scales, tickers and countries
 gen_inf <- readxl::read_xlsx("Data/ds_data.xlsx", sheet = "fromto")
@@ -76,7 +75,11 @@ usdx_spr <- df |>
 gbpx <- gbpx |> 
   filter(!(from %in% usd_spr_crncy))
 
-#   Join all tibbles and save RDS.
+#   Get tibble with the dates in which Eurozone countries joined the monetary union.
+eudates <- gen_inf |> 
+  get_eu_dates()
+
+#   Join all tibbles, keep "good" bid/ask quotes, clean as in Lustig et al. and save RDS.
 df |> 
   drop_usdgbp() |> # Filter out USDGBP, since we already dealt with that.
   filter(to == "United States Dollar" & mkt != "spr" & !(from %in% usd_spr_crncy)) |> # Filter all direct quotes vs.
@@ -85,28 +88,21 @@ df |>
   bind_rows(xusd, usdgbp, usdx_spr, gbpx) |> 
   select(-to) |> # Remove to column, as everything is to USD now
   arrange(date, from) |> 
+  drop_bad_bidask() |> # Drop all observations where bid > ask
+  lustig_cleaning(eudates) |> # Implement Lustig et al. cleaning procedures 
   write_rds("Data/all_outright.rds") # Save as .rds
 
 #   C2: All bids < asks
 read_rds("Data/all_outright.rds") |>  
   check2() # Ideal = 0
 
-#   Get tibble with the dates in which Eurozone countries joined the monetary union.
-eudates <- gen_inf |> 
-  get_eu_dates()
-
-#   Drop all observations where bid > ask (in long format, 550/107013) and implement Lustig et al. cleaning 
-# and returns computation
-read_rds("Data/all_outright.rds") |>  
-  drop_bad_bid_asks() |> 
-  lustig_cleaning(eudates) |> 
-  lustig_returns() |> 
-  write_rds("Data/returns.rds")
-
 rm(list = ls())
 
-# 
-df <- read_rds("Data/returns.rds") |>
+##### Returns and Signals #####
+source("R/helpers.R")
+
+df <- read_rds("Data/all_outright.rds") |>  
+  lustig_returns() |> 
   # rl_t = the return I get in month t+1 for going long in month t
   # fwd_disc_t = the carry I observe in month t and expect to get in month t+1
   # => fwd_disc is the expectation, rl is what realized
