@@ -99,34 +99,29 @@ read_rds("Data/all_outright.rds") |>
 rm(list = ls())
 
 ##### Returns and Signals #####
+source("R/startup.R")
 source("R/helpers.R")
+source("R/plotters.R")
 
-df <- read_rds("Data/all_outright.rds") |>  
+#   This chunk will plot the time series for each currency (group). This is to check if any of the time series behaves
+# strangely, and if so, it's easy to see which market/side does so.
+# read_rds("Data/all_outright.rds") |>  
+#   mutate(label = paste(mkt, side)) |> 
+#   group_split(from) |> 
+#   walk(group_line_plot)
+
+#   Simple plot for amount of currencies over time
+read_rds("Data/all_outright.rds") |> 
+  group_by(date) |> 
+  mutate(N = n()) |> 
+  simple_line(.x = date,
+              .y = N)
+
+#   Compute all necessary signals 
+read_rds("Data/all_outright.rds") |>  
   lustig_returns() |> 
   # rl_t = the return I get in month t+1 for going long in month t
   # fwd_disc_t = the carry I observe in month t and expect to get in month t+1
   # => fwd_disc is the expectation, rl is what realized
-  mutate(
-    fwd_disc = fwd.bid - spot.ask, # Carry
-  ) |> 
-  group_by(from) |> 
-  mutate(
-    # Momentum
-    mom1     = lag(rl),
-    mom3     = slider::slide_dbl(.x = rl, .f = sum, .before = 2, .complete = TRUE) |> lag(),
-    mom6     = slider::slide_dbl(.x = rl, .f = sum, .before = 5, .complete = TRUE) |> lag(),
-    mom12    = slider::slide_dbl(.x = rl, .f = sum, .before = 10, .complete = TRUE) |> lag()
-  ) |> 
-  group_by(date) |> 
-  mutate(
-    avg_fd = mean(fwd_disc), # Dollar Carry
-    N      = n()
-  ) 
+  compute_signals()
 
-df
-
-p <- df |>
-  ggplot(aes(x = date, y = N)) + 
-  geom_line()
-
-plotly::ggplotly(p)
