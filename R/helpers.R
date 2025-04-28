@@ -22,6 +22,31 @@ lustig_returns <- function(.data,
 
 
 
+compute_signals <- function(.data){
+  #   This function computes all the signals that will be used as sorting variables for the replicated factors.
+  
+  .data |> 
+    dplyr::mutate(
+      fwd_disc = fwd.bid - spot.ask, # Carry
+    ) |> 
+    dplyr::group_by(from) |> 
+    dplyr::mutate(
+      # Momentum
+      mom1     = dplyr::lag(rl),
+      mom3     = slider::slide_dbl(.x = rl, .f = sum, .before = 2, .complete = TRUE) |> dplyr::lag(),
+      mom6     = slider::slide_dbl(.x = rl, .f = sum, .before = 5, .complete = TRUE) |> dplyr::lag(),
+      mom12    = slider::slide_dbl(.x = rl, .f = sum, .before = 10, .complete = TRUE) |> dplyr::lag()
+    ) |> 
+    dplyr::group_by(date) |> 
+    dplyr::mutate(
+      avg_fd = mean(fwd_disc), # Dollar Carry
+    ) |> 
+    dplyr::ungroup()
+  
+}
+
+
+
 assign_portfolio <- function(.data, 
                              .variable, 
                              .n_portfolios) {
