@@ -1,6 +1,6 @@
 lustig_returns <- function(.data,
-                       .side = "side", 
-                       .market = "mkt"){
+                           .side = "side", 
+                           .market = "mkt"){
   
   .data |> 
     dplyr::mutate(px = log(px)) |>
@@ -39,9 +39,46 @@ compute_signals <- function(.data){
     ) |> 
     dplyr::group_by(date) |> 
     dplyr::mutate(
-      avg_fd = mean(fwd_disc), # Dollar Carry
+      avg_fd = mean(fwd_disc, na.rm = TRUE), # Dollar Carry
     ) |> 
     dplyr::ungroup()
+  
+}
+
+
+
+compute_dol_carry <- function(.data){
+  #   This function computes the returns for the Dollar (1/N of all currencies) strategy.
+  
+  .data |> 
+    dplyr::summarise(
+      dol_carry = ifelse(mean(avg_fd, na.rm = T) >= 0, mean(rl), mean(rs)), # I take the mean(avg_fd) to save a few 
+      # lines of code. Since avg_fd is the same in every date, it's also the same as it's mean.
+      .by       = date,
+    ) |> 
+    tidyr::pivot_longer(
+      -date,
+      names_to  = "strategy",
+      values_to = "ret"
+    )
+  
+}
+
+
+
+compute_dol <- function(.data){
+  #   This function computes returns for the Dollar Carry strategy. 
+  
+  .data |> 
+    dplyr::summarise(
+      dol = mean(rl),
+      .by = date
+    ) |> 
+    tidyr::pivot_longer(
+      -date,
+      names_to  = "strategy",
+      values_to = "ret"
+    )
   
 }
 
@@ -50,6 +87,8 @@ compute_signals <- function(.data){
 assign_portfolio <- function(.data, 
                              .variable, 
                              .n_portfolios) {
+  #   This function computes the breakpoints for a variable/signal and sorts securities into portfolios according 
+  # to this variable.
   #   Refer to https://www.tidy-finance.org/r/univariate-portfolio-sorts.html
   
   # Compute breakpoints
