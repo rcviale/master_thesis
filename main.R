@@ -110,18 +110,46 @@ source("R/plotters.R")
 #   group_split(from) |> 
 #   walk(group_line_plot)
 
+#   Compute returns and signals
+df <- read_rds("Data/all_outright.rds") |>  
+  lustig_returns() |> 
+  # rl_t (rs_t) = the return I get in month t+1 for going long (short) in month t
+  # fwd_disc_t = the carry I observe in month t and expect to get in month t+1
+  # => fwd_disc is the expectation, rl is what realized
+  compute_signals()# |> 
+  # select(-starts_with(c("spot.", "fwd.")))
+
 #   Simple plot for amount of currencies over time
-read_rds("Data/all_outright.rds") |> 
+df |> 
   group_by(date) |> 
   mutate(N = n()) |> 
   simple_line(.x = date,
               .y = N)
+#   From the plot, we can see N<=3 (i.e. insufficient) until 1990-04-30. Thus, we will start from 1990-05-31.
+df <- df |> 
+  filter(date >= "1990-05-31")
 
-#   Compute all necessary signals 
-read_rds("Data/all_outright.rds") |>  
-  lustig_returns() |> 
-  # rl_t = the return I get in month t+1 for going long in month t
-  # fwd_disc_t = the carry I observe in month t and expect to get in month t+1
-  # => fwd_disc is the expectation, rl is what realized
-  compute_signals()
+#   Compute Dollar Carry strategy
+factors <- df |> 
+  drop_na(fwd_disc) |>  # There are 5 currencies which have forward quotes starting before spot quotes, which makes it
+# so that there's no forward discount in the first observation. Here we are dropping these observations because since
+# these NA's didn't enter the fwd_disc (and consequently avg_fd) calculation, their returns should not be considered 
+# in the Dollar Carry strategy.
+  compute_dol_carry()
+
+#   Add Dollar strategy
+factors <- df |> 
+  compute_dol() |> 
+  bind_rows(factors) |> 
+  arrange(date, strategy)
+
+
+df |> 
+  filter(date >= "1990-05-31") |> 
+  select(-starts_with(c("spot.", "fwd."))) |> 
+  pivot_longer(
+    fwd_disc
+  )
+
+
 
