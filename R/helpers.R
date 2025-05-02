@@ -117,13 +117,13 @@ assign_portfolio <- function(.data,
 
 
 
-compute_portfolios <- function(.data,
-                               .variable,
-                               .n_portfolios){
+multiple_portfolio_sorts <- function(.data,
+                                     .variable,
+                                     .n_portfolios){
   
   .data |> 
     tidyr::drop_na({{ .variable }}) |> 
-    dplyr::group_by(date) |> 
+    dplyr::group_by(date, signal) |> 
     dplyr::mutate(
       portfolio = assign_portfolio(
         .data         = dplyr::pick(dplyr::everything()),
@@ -132,12 +132,13 @@ compute_portfolios <- function(.data,
       ),
       portfolio = as.factor(paste0("p", portfolio))
     ) |>
-    dplyr::group_by(portfolio, date) |>
+    dplyr::group_by(portfolio, date, signal) |>
     dplyr::summarize(
       ret_l = sum(rl / dplyr::n()),
       ret_s = sum(rs / dplyr::n()),
       .groups = "drop"
-    )
+    ) |> 
+    dplyr::arrange(date, signal, portfolio)
   
 }
 
