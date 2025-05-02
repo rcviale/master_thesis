@@ -44,3 +44,33 @@ simple_line <- function(.data,
     print()                  # Print the interactive plot
 }
 
+
+
+multiple_lines <- function(.data,
+                           .x,
+                           .y,
+                           .col,
+                           .title = NULL,
+                           .xlab  = NULL,
+                           .ylab  = NULL){
+  #   This function generates a simple line plotly with nice formatting.
+  
+  p <- .data |>
+    ggplot2::ggplot() +  # Initialize a ggplot object with the input data
+    ggplot2::geom_line(  # Add a line geometry to the plot
+      ggplot2::aes(x = {{ .x }}, y = {{ .y }}, color = {{ .col }}),  # Map aesthetics: x, y variables and color
+      linewidth = 1          # Set line width
+    ) +
+    ggplot2::labs(           # Add labels: title, x-axis label, y-axis label
+      title = ifelse(is.null(.title), paste0("Line Plot of ", rlang::enexpr(.y), " over ", rlang::enexpr(.x)), .title),
+      x     = ifelse(is.null(.xlab), paste0(rlang::enexpr(.x)), .xlab),
+      y     = ifelse(is.null(.ylab), paste0(rlang::enexpr(.y)), .ylab)
+    ) + 
+    ggplot2::theme_minimal()      # Apply a black and white theme to the plot
+  
+  p |>
+    plotly::ggplotly() |>    # Convert the ggplot object to an interactive Plotly plot
+    print()                  # Print the interactive plot
+  
+}
+
