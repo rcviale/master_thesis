@@ -117,7 +117,7 @@ df <- read_rds("Data/all_outright.rds") |>
   # fwd_disc_t = the carry I observe in month t and expect to get in month t+1
   # => fwd_disc is the expectation, rl is what realized
   compute_signals()# |> 
-  # select(-starts_with(c("spot.", "fwd.")))
+# select(-starts_with(c("spot.", "fwd.")))
 
 #   Simple plot for amount of currencies over time
 df |> 
@@ -132,9 +132,9 @@ df <- df |>
 #   Compute Dollar Carry strategy
 factors <- df |> 
   drop_na(fwd_disc) |>  # There are 5 currencies which have forward quotes starting before spot quotes, which makes it
-# so that there's no forward discount in the first observation. Here we are dropping these observations because since
-# these NA's didn't enter the fwd_disc (and consequently avg_fd) calculation, their returns should not be considered 
-# in the Dollar Carry strategy.
+  # so that there's no forward discount in the first observation. Here we are dropping these observations because since
+  # these NA's didn't enter the fwd_disc (and consequently avg_fd) calculation, their returns should not be considered 
+  # in the Dollar Carry strategy.
   compute_dol_carry()
 
 #   Add Dollar strategy
@@ -143,13 +143,24 @@ factors <- df |>
   bind_rows(factors) |> 
   arrange(date, strategy)
 
-
-df |> 
-  filter(date >= "1990-05-31") |> 
-  select(-starts_with(c("spot.", "fwd."))) |> 
+#   Drop unecessary columns, drop NA's, pivot longer and keep only dates where N>=20.
+df <- df |> 
+  select(-starts_with(c("spot.", "fwd.")), -avg_fd) |> 
   pivot_longer(
-    fwd_disc
-  )
+    -c(date, from, rl, rs),
+    names_to  = "signal",
+    values_to = "var"
+  ) |> 
+  drop_na(var) |> 
+  group_by(date, signal) |> 
+  filter(n() >= 20) |> 
+  ungroup() |> 
+  arrange(date, signal) 
 
+#   Compute portfolio sorts
+df |> 
+  multiple_portfolio_sorts(.variable = var,
+                           .n_portfolios = 5) |> 
+  multiple_lines()
 
 
