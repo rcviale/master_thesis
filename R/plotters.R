@@ -1,10 +1,17 @@
-group_line_plot <- function(.data){
+group_line_plot <- function(.data,
+                            .x,
+                            .y,
+                            .color,
+                            .title){
   # This function makes a line plot for each group (time series in this case).
+  .title <- .data |> 
+    dplyr::pull({{ .title }}) |> 
+    unique()
   
   p <- .data |> 
-    ggplot2::ggplot(ggplot2::aes(x = date, y = px, color = label)) +  # Initialize ggplot with aesthetics mapping
+    ggplot2::ggplot(ggplot2::aes(x = {{ .x }}, y = {{ .y }}, color = {{ .color}})) +  # Initialize ggplot with aesthetics mapping
     ggplot2::geom_line(linewidth = 1) +  # Add lines for each group with specified line width
-    ggplot2::labs(title = unique(.data$from)) +  # Set the plot title based on the 'from' column
+    ggplot2::labs(title = .title) +  # Set the plot title based on the 'from' column
     ggplot2::theme_minimal()  # Apply a minimalistic theme to the plot
   
   p |> 
