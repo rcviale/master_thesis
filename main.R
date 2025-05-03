@@ -161,6 +161,13 @@ df <- df |>
 df |> 
   multiple_portfolio_sorts(.variable = var,
                            .n_portfolios = 5) |> 
-  multiple_lines()
-
+  group_by(signal, portfolio) |> 
+  mutate(cum_ret = exp(cumsum(ret_l)) - 1) |> 
+  ungroup() |> 
+  group_split(signal) |> 
+  walk(.f = ~group_line_plot(.data = .x,
+                             .x = date,
+                             .y = cum_ret,
+                             .color = portfolio,
+                             .title = signal))
 
