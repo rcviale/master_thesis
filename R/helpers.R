@@ -59,7 +59,7 @@ compute_dol_carry <- function(.data){
     tidyr::pivot_longer(
       -date,
       names_to  = "strategy",
-      values_to = "ret"
+      values_to = "ret_l"
     )
   
 }
@@ -77,7 +77,7 @@ compute_dol <- function(.data){
     tidyr::pivot_longer(
       -date,
       names_to  = "strategy",
-      values_to = "ret"
+      values_to = "ret_l"
     )
   
 }
@@ -157,5 +157,24 @@ compute_ls <- function(.data,
     tidyr::pivot_longer(-date,
                         names_to  = .port_col,
                         values_to = "ex_ret")
+  
+}
+
+
+
+perf_stats <- function(.data){
+  
+  .data |> 
+    group_by(signal, portfolio) |> 
+    summarise(
+      ann_ret = (exp(mean(ret_l) * 12) - 1) * 100,
+      ann_vol = sd(exp(ret_l) - 1) * sqrt(12) * 100,
+      .groups = "drop"
+    ) |>
+    dplyr::mutate(
+      sharpe  = ann_ret / ann_vol,
+    ) |> 
+    purrr::modify_if(.p = is.numeric,
+                     .f = ~round(.x, 2))
   
 }
