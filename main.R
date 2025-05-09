@@ -160,14 +160,18 @@ df <- df |>
 #   Compute portfolio sorts
 df |> 
   multiple_portfolio_sorts(.variable = var,
-                           .n_portfolios = 5) |> 
+                           .n_portfolios = 5) |>
+  multiple_long_short()
   group_by(signal, portfolio) |> 
-  mutate(cum_ret = exp(cumsum(ret_l)) - 1) |> 
+  mutate(
+    cum_long  = exp(cumsum(ret_l)) - 1,
+    cum_short = exp(cumsum(ret_s)) - 1
+  ) |> 
   ungroup() |> 
   group_split(signal) |> 
   walk(.f = ~group_line_plot(.data = .x,
                              .x = date,
-                             .y = cum_ret,
+                             .y = cum_short,
                              .color = portfolio,
                              .title = signal))
 
