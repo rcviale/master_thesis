@@ -144,19 +144,40 @@ multiple_portfolio_sorts <- function(.data,
 
 
 
-compute_ls <- function(.data,
+multiple_hml <- function(.data,
                        .long  = "ret_l_p3",
                        .short = "ret_s_p1",
                        .port_col = "portfolio",
                        .ret_col  = c("ret_l", "ret_s")) {
   
-  .data |> 
-    tidyr::pivot_wider(names_from  = {{ .port_col }},
-                       values_from = {{ .ret_col }}) |>
-    dplyr::mutate(ls = (1 + .data[[ .long ]]) * (1 + .data[[ .short ]]) - 1) |> 
-    tidyr::pivot_longer(-date,
-                        names_to  = .port_col,
-                        values_to = "ex_ret")
+  longs <- df |> 
+    multiple_portfolio_sorts(.variable = var,
+                             .n_portfolios = 5) |> 
+    select(-ret_s) |> 
+    filter(portfolio == "p5") |> 
+    pivot_wider(names_from = portfolio,
+                values_from = ret_l) |> 
+    rename(long_p5 = p5) 
+  
+  
+  shorts <- df |> 
+    multiple_portfolio_sorts(.variable = var,
+                             .n_portfolios = 5) |> 
+    select(-ret_l) |> 
+    filter(portfolio == "p1") |> 
+    pivot_wider(names_from = portfolio,
+                values_from = ret_s) |> 
+    rename(short_p1 = p1) 
+  
+  shorts |> 
+    inner_join(longs, by = join_by(date, signal)) |> 
+    mutate(ret_l     = long_p5 - short_p1,
+           portfolio = "hml", 
+           ret_s     = NA) |> 
+    select(-c(short_p1, long_p5)) |> 
+    bind_rows(df |>   multiple_portfolio_sorts(.variable = var,
+                                               .n_portfolios = 5) ) |> 
+    arrange(date, signal, portfolio)
   
 }
 
