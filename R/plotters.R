@@ -2,7 +2,8 @@ group_line_plot <- function(.data,
                             .x,
                             .y,
                             .color,
-                            .title){
+                            .title,
+                            .path = NA){
   # This function makes a line plot for each group (time series in this case).
   .title <- .data |> 
     dplyr::pull({{ .title }}) |> 
@@ -14,9 +15,26 @@ group_line_plot <- function(.data,
     ggplot2::labs(title = .title) +  # Set the plot title based on the 'from' column
     ggplot2::theme_minimal()  # Apply a minimalistic theme to the plot
   
-  p |> 
-    plotly::ggplotly() |>  # Convert ggplot object to interactive Plotly object
-    print()  # Print the interactive plot
+  if (is.na(.path)){
+    
+    # Simply print the plot adding plotly to it
+    p |> 
+      plotly::ggplotly() |>  # Convert ggplot object to interactive Plotly object
+      print()  # Print the interactive plot
+    
+  } else {
+
+    # Save the plot to a file
+    ggplot2::ggsave(
+      filename = paste0(.path, .title, ".png"),
+      plot     = p,
+      width    = 8,
+      height   = 5,
+      dpi      = 300,
+      bg       = "white"
+    ) 
+    
+  }
   
 }
 
@@ -60,7 +78,7 @@ multiple_lines <- function(.data,
                            .title = NULL,
                            .xlab  = NULL,
                            .ylab  = NULL){
-  #   This function generates a simple line plotly with nice formatting.
+  #   This function generates a line plotly with multiple lines/colors which are given in a column of the input.
   
   p <- .data |>
     ggplot2::ggplot() +  # Initialize a ggplot object with the input data
