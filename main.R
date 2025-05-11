@@ -1,5 +1,4 @@
 source("R/startup.R")
-
 source("R/cleaners.R")
 source("R/checkers.R")
 
@@ -116,15 +115,14 @@ df <- read_rds("Data/all_outright.rds") |>
   # rl_t (rs_t) = the return I get in month t+1 for going long (short) in month t
   # fwd_disc_t = the carry I observe in month t and expect to get in month t+1
   # => fwd_disc is the expectation, rl is what realized
-  compute_signals()# |> 
-# select(-starts_with(c("spot.", "fwd.")))
+  compute_signals()
 
 #   Simple plot for amount of currencies over time
-df |> 
-  group_by(date) |> 
-  mutate(N = n()) |> 
-  simple_line(.x = date,
-              .y = N)
+# df |> 
+#   group_by(date) |> 
+#   mutate(N = n()) |> 
+#   simple_line(.x = date,
+#               .y = N)
 #   From the plot, we can see N<=3 (i.e. insufficient) until 1990-04-30. Thus, we will start from 1990-05-31.
 df <- df |> 
   filter(date >= "1990-05-31")
@@ -159,9 +157,8 @@ df <- df |>
 
 #   Compute portfolio sorts
 df |> 
-  multiple_portfolio_sorts(.variable = var,
-                           .n_portfolios = 5) |>
-  multiple_long_short()
+  multiple_portfolio_sorts(.variable = var) |> # Default is 5 portfolios
+  multiple_hml() |>  # Default is 5 portfolios
   group_by(signal, portfolio) |> 
   mutate(
     cum_long  = exp(cumsum(ret_l)) - 1,
@@ -169,9 +166,14 @@ df |>
   ) |> 
   ungroup() |> 
   group_split(signal) |> 
-  walk(.f = ~group_line_plot(.data = .x,
-                             .x = date,
-                             .y = cum_short,
-                             .color = portfolio,
-                             .title = signal))
+  walk(
+    .f = ~group_line_plot(
+      .data  = .x,
+      .x     = date,
+      .y     = cum_long,
+      .color = portfolio,
+      .title = signal,
+      .path  = "Plots/"
+    )
+  )
 
