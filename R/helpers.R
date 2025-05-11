@@ -119,7 +119,7 @@ assign_portfolio <- function(.data,
 
 multiple_portfolio_sorts <- function(.data,
                                      .variable,
-                                     .n_portfolios){
+                                     .n_portfolios = 5){
   
   .data |> 
     tidyr::drop_na({{ .variable }}) |> 
@@ -145,39 +145,41 @@ multiple_portfolio_sorts <- function(.data,
 
 
 multiple_hml <- function(.data,
-                       .long  = "ret_l_p3",
-                       .short = "ret_s_p1",
-                       .port_col = "portfolio",
-                       .ret_col  = c("ret_l", "ret_s")) {
+                         .n_portfolios = 5) {
+  #   This function computes the high-minus-low (HML) portfolio return for sorted portfolios and appends it to the
+  # input data.
   
-  longs <- df |> 
-    multiple_portfolio_sorts(.variable = var,
-                             .n_portfolios = 5) |> 
-    select(-ret_s) |> 
-    filter(portfolio == "p5") |> 
-    pivot_wider(names_from = portfolio,
-                values_from = ret_l) |> 
-    rename(long_p5 = p5) 
+  high_id <- paste0("p", .n_portfolios)
   
+  longs <- .data |> 
+    dplyr::select(-ret_s) |>  # Remove short return column
+    dplyr::filter(portfolio == high_id) |>  # Filter for the highest portfolio (long leg)
+    tidyr::pivot_wider(  # Reshape data to wide format, long returns in one column
+      names_from  = portfolio,
+      values_from = ret_l
+    ) |> 
+    dplyr::rename(long_p5 = p5)  # Rename the p5 column to long_p5
   
-  shorts <- df |> 
-    multiple_portfolio_sorts(.variable = var,
-                             .n_portfolios = 5) |> 
-    select(-ret_l) |> 
-    filter(portfolio == "p1") |> 
-    pivot_wider(names_from = portfolio,
-                values_from = ret_s) |> 
-    rename(short_p1 = p1) 
-  
-  shorts |> 
-    inner_join(longs, by = join_by(date, signal)) |> 
-    mutate(ret_l     = long_p5 - short_p1,
-           portfolio = "hml", 
-           ret_s     = NA) |> 
-    select(-c(short_p1, long_p5)) |> 
-    bind_rows(df |>   multiple_portfolio_sorts(.variable = var,
-                                               .n_portfolios = 5) ) |> 
-    arrange(date, signal, portfolio)
+  .data |> 
+    dplyr::select(-ret_l) |>  # Remove long return column
+    dplyr::filter(portfolio == "p1") |>  # Filter for the lowest portfolio (short leg)
+    tidyr::pivot_wider(  # Reshape data to wide format, short returns in one column
+      names_from  = portfolio,
+      values_from = ret_s
+    ) |> 
+    dplyr::rename(short_p1 = p1) |>  # Rename the p1 column to short_p1
+    dplyr::inner_join(  # Join with long returns by date and signal
+      longs, 
+      dplyr::join_by(date, signal)
+    ) |> 
+    dplyr::mutate(
+      ret_l     = long_p5 - short_p1,  # Compute HML return
+      portfolio = "hml",  # Label the portfolio as "hml"
+      ret_s     = NA  # Set short return to NA (not applicable)
+    ) |> 
+    dplyr::select(-c(short_p1, long_p5)) |>  # Drop intermediate columns
+    dplyr::bind_rows(.data) |>  # Append original data to include all portfolios
+    dplyr::arrange(date, signal, portfolio)  # Sort by date, signal, and portfolio
   
 }
 
