@@ -10,13 +10,12 @@ lustig_returns <- function(.data,
     dplyr::arrange(date, from) |> 
     dplyr::group_by(from) |> 
     dplyr::mutate(
-      # rl = dplyr::lag(fwd.bid) - spot.ask,
-      # rs = -dplyr::lag(fwd.ask) + spot.bid,
       rl = fwd.bid - dplyr::lead(spot.ask),
-      rs = -fwd.ask + dplyr::lead(spot.bid)
+      rs = -fwd.ask + dplyr::lead(spot.bid),
+      rm = dplyr::lag(log( exp( fwd.bid ) + exp( fwd.ask ) )) - log( exp( spot.bid ) + exp( spot.ask ) ) 
     ) |> 
     dplyr::ungroup() |> 
-    tidyr::drop_na(rl, rs)
+    tidyr::drop_na(rl, rs, rm) #FIXME Can I drop later?
   
 }
 
@@ -32,10 +31,10 @@ compute_signals <- function(.data){
     dplyr::group_by(from) |> 
     dplyr::mutate(
       # Momentum
-      mom1     = dplyr::lag(rl),
-      mom3     = slider::slide_dbl(.x = rl, .f = sum, .before = 2, .complete = TRUE) |> dplyr::lag(),
-      mom6     = slider::slide_dbl(.x = rl, .f = sum, .before = 5, .complete = TRUE) |> dplyr::lag(),
-      mom12    = slider::slide_dbl(.x = rl, .f = sum, .before = 10, .complete = TRUE) |> dplyr::lag()
+      mom1     = dplyr::lag(rm),
+      mom3     = slider::slide_dbl(.x = rm, .f = sum, .before = 2, .complete = TRUE) |> dplyr::lag(),
+      mom6     = slider::slide_dbl(.x = rm, .f = sum, .before = 5, .complete = TRUE) |> dplyr::lag(),
+      mom12    = slider::slide_dbl(.x = rm, .f = sum, .before = 10, .complete = TRUE) |> dplyr::lag()
     ) |> 
     dplyr::group_by(date) |> 
     dplyr::mutate(
