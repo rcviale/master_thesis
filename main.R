@@ -113,6 +113,7 @@ source("R/plotters.R")
 df <- read_rds("Data/all_outright.rds") |>  
   lustig_returns() |> 
   # rl_t (rs_t) = the return I get in month t+1 for going long (short) in month t
+  # rm_t = the midpoint return I got in the current month t (non look ahead)
   # fwd_disc_t = the carry I observe in month t and expect to get in month t+1
   # => fwd_disc is the expectation, rl is what realized
   compute_signals()
@@ -143,7 +144,7 @@ factors <- df |>
 
 #   Drop unecessary columns, drop NA's, pivot longer and keep only dates where N>=20.
 df <- df |> 
-  select(-starts_with(c("spot.", "fwd.")), -avg_fd) |> 
+  select(-starts_with(c("spot.", "fwd.")), -c(avg_fd, rm)) |> 
   pivot_longer(
     -c(date, from, rl, rs),
     names_to  = "signal",
@@ -154,6 +155,19 @@ df <- df |>
   filter(n() >= 20) |> 
   ungroup() |> 
   arrange(date, signal) 
+
+#   TS (time series) carry and momentum
+df |> 
+  # filter(signal == "fwd_disc") |> 
+  group_by(date, signal) |> 
+  summarise(
+    long  = if_else(is_empty(rl[var > 0]), 0, mean( rl[var > 0], na.rm = T)),
+    short = if_else(is_empty(rs[var < 0]), 0, mean( rs[var < 0], na.rm = T)),
+    .groups = "drop"
+  ) |> 
+  mutate(
+    hml = long - short
+  )
 
 #   Compute portfolio sorts
 df |> 
