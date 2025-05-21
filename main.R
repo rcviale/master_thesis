@@ -130,7 +130,7 @@ df <- df |>
 
 #   Compute Dollar Carry strategy
 factors <- df |> 
-  drop_na(fwd_disc) |>  # There are 5 currencies which have forward quotes starting before spot quotes, which makes it
+  drop_na(carry) |>  # There are 5 currencies which have forward quotes starting before spot quotes, which makes it
   # so that there's no forward discount in the first observation. Here we are dropping these observations because since
   # these NA's didn't enter the fwd_disc (and consequently avg_fd) calculation, their returns should not be considered 
   # in the Dollar Carry strategy.
@@ -139,8 +139,7 @@ factors <- df |>
 #   Add Dollar strategy
 factors <- df |> 
   compute_dol() |> 
-  bind_rows(factors) |> 
-  arrange(date, strategy)
+  bind_rows(factors)
 
 #   Drop unecessary columns, drop NA's, pivot longer and keep only dates where N>=20.
 df <- df |> 
@@ -156,37 +155,42 @@ df <- df |>
   ungroup() |> 
   arrange(date, signal) 
 
-#   TS (time series) carry and momentum
-df |> 
-  # filter(signal == "fwd_disc") |> 
-  group_by(date, signal) |> 
-  summarise(
-    long  = if_else(is_empty(rl[var > 0]), 0, mean( rl[var > 0], na.rm = T)),
-    short = if_else(is_empty(rs[var < 0]), 0, mean( rs[var < 0], na.rm = T)),
-    .groups = "drop"
-  ) |> 
-  mutate(
-    hml = long - short
-  )
+#   Add TS (time series) carry and momentum
+factors <- df |> 
+  compute_ts_factors() |> 
+  bind_rows(factors)
 
 #   Compute portfolio sorts
-df |> 
+factors <- df |> 
   multiple_portfolio_sorts(.variable = var) |> # Default is 5 portfolios
   multiple_hml() |>  # Default is 5 portfolios
-  group_by(signal, portfolio) |> 
+  mutate(
+    portfolio = dplyr::case_when(
+      portfolio == "p1" ~ "short",
+      portfolio == "p5" ~ "long",
+      .default  =  portfolio
+    )
+  ) |> 
+  bind_rows(factors) |> 
+  arrange(date, strategy, portfolio) |> 
+  select(date, strategy, portfolio, ret_l, ret_s)
+
+factors |> 
+  group_by(strategy, portfolio) |> 
+  filter(portfolio %in% c("single", "hml", "long", "short")) |> 
   mutate(
     cum_long  = exp(cumsum(ret_l)) - 1,
     cum_short = exp(cumsum(ret_s)) - 1
   ) |> 
   ungroup() |> 
-  group_split(signal) |> 
+  group_split(strategy) |> 
   walk(
     .f = ~group_line_plot(
       .data  = .x,
       .x     = date,
       .y     = cum_long,
       .color = portfolio,
-      .title = signal,
+      .title = strategy,
       .path  = "Plots/"
     )
   )
