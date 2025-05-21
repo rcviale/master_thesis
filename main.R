@@ -129,7 +129,7 @@ df <- df |>
   filter(date >= "1990-05-31")
 
 #   Compute Dollar Carry strategy
-factors <- df |> 
+portfolios <- df |> 
   drop_na(carry) |>  # There are 5 currencies which have forward quotes starting before spot quotes, which makes it
   # so that there's no forward discount in the first observation. Here we are dropping these observations because since
   # these NA's didn't enter the fwd_disc (and consequently avg_fd) calculation, their returns should not be considered 
@@ -137,9 +137,9 @@ factors <- df |>
   compute_dol_carry()
 
 #   Add Dollar strategy
-factors <- df |> 
+portfolios <- df |> 
   compute_dol() |> 
-  bind_rows(factors)
+  bind_rows(portfolios)
 
 #   Drop unecessary columns, drop NA's, pivot longer and keep only dates where N>=20.
 df <- df |> 
@@ -156,31 +156,42 @@ df <- df |>
   arrange(date, signal) 
 
 #   Add TS (time series) carry and momentum
-factors <- df |> 
+portfolios <- df |> 
   compute_ts_factors() |> 
-  bind_rows(factors)
+  bind_rows(portfolios)
 
-#   Compute portfolio sorts
-factors <- df |> 
+#   Compute portfolio sorts and join with the portfolios tibble
+portfolios <- df |> 
   multiple_portfolio_sorts(.variable = var) |> # Default is 5 portfolios
   multiple_hml() |>  # Default is 5 portfolios
-  mutate(
-    portfolio = dplyr::case_when(
-      portfolio == "p1" ~ "short",
-      portfolio == "p5" ~ "long",
-      .default  =  portfolio
-    )
-  ) |> 
-  bind_rows(factors) |> 
-  arrange(date, strategy, portfolio) |> 
-  select(date, strategy, portfolio, ret_l, ret_s)
+  rename_edge_portfolios() |> 
+  bind_rows(portfolios) |> 
+  organize_portfolios()
+
+factors <- portfolios |> 
+  filter(portfolio %in% c("single", "hml")) |> 
+  select(-c(ret_s, portfolio))
 
 factors |> 
-  group_by(strategy, portfolio) |> 
-  filter(portfolio %in% c("single", "hml", "long", "short")) |> 
+  group_by(strategy) |> 
   mutate(
-    cum_long  = exp(cumsum(ret_l)) - 1,
-    cum_short = exp(cumsum(ret_s)) - 1
+    cum_ret = exp(cumsum(ret_l)) - 1
+  ) |> 
+  multiple_lines(
+    .x     = date,
+    .y     = cum_ret,
+    .col   = strategy,
+    .title = "Factors",
+    .xlab  = "Date",
+    .ylab  = "Simple Return"
+  )
+
+portfolios |> 
+  filter(portfolio %in% c("single", "hml", "long", "short")) |> 
+  group_by(strategy, portfolio) |> 
+  mutate(
+    ret      = if_else(portfolio == "short", ret_s, ret_l),
+    cum_ret  = exp(cumsum(ret)) - 1,
   ) |> 
   ungroup() |> 
   group_split(strategy) |> 
@@ -188,7 +199,7 @@ factors |>
     .f = ~group_line_plot(
       .data  = .x,
       .x     = date,
-      .y     = cum_long,
+      .y     = cum_ret,
       .color = portfolio,
       .title = strategy,
       .path  = "Plots/"
