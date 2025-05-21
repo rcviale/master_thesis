@@ -186,6 +186,12 @@ factors |>
     .ylab  = "Simple Return"
   )
 
+factors |> 
+  pivot_wider(names_from = strategy, values_from = ret_l) |> 
+  select(-date) |> 
+  cor(use = "pairwise.complete.obs") |> 
+  corrplot::corrplot(method = "color", type = "lower")
+
 portfolios |> 
   filter(portfolio %in% c("single", "hml", "long", "short")) |> 
   group_by(strategy, portfolio) |> 
