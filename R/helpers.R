@@ -26,7 +26,7 @@ compute_signals <- function(.data){
   
   .data |> 
     dplyr::mutate(
-      fwd_disc = fwd.bid - spot.ask, # Carry
+      carry = fwd.bid - spot.ask, # Carry
     ) |> 
     dplyr::group_by(from) |> 
     dplyr::mutate(
@@ -38,7 +38,7 @@ compute_signals <- function(.data){
     ) |> 
     dplyr::group_by(date) |> 
     dplyr::mutate(
-      avg_fd = mean(fwd_disc, na.rm = TRUE), # Dollar Carry
+      avg_fd = mean(carry, na.rm = TRUE), # Dollar Carry
     ) |> 
     dplyr::ungroup()
   
@@ -59,6 +59,9 @@ compute_dol_carry <- function(.data){
       -date,
       names_to  = "strategy",
       values_to = "ret_l"
+    ) |> 
+    dplyr::mutate(
+      portfolio = "single"
     )
   
 }
@@ -77,7 +80,49 @@ compute_dol <- function(.data){
       -date,
       names_to  = "strategy",
       values_to = "ret_l"
+    ) |> 
+    dplyr::mutate(
+      portfolio = "single"
     )
+  
+}
+
+
+
+compute_ts_factors <- function(.data){
+  #   This function computes the time series factors, i.e. time series carry and time series momentum.
+  
+  .data <- .data |> 
+    dplyr::group_by(date, signal) |> 
+    dplyr::summarise(
+      ret_l = if_else( rlang::is_empty( rl[var > 0] ), 0, mean( rl[var > 0], na.rm = T)),
+      ret_s = if_else( rlang::is_empty( rs[var < 0] ), 0, mean( rs[var < 0], na.rm = T)),
+      .groups = "drop"
+    ) |> 
+    dplyr::mutate(
+      hml = ret_l - ret_s,
+      strategy = paste0("ts_", signal)
+    ) |> 
+    dplyr::select(-signal)
+  
+  .hml <- .data |> 
+    dplyr::select(date, strategy, ret_l = hml) |>
+    dplyr::mutate(
+      portfolio = "hml"
+    )
+  
+  .long <- .data|> 
+    dplyr::select(date, strategy, ret_l) |> 
+    dplyr::mutate(
+      portfolio = "long"
+    )
+  
+  .data |> 
+    dplyr::select(date, strategy, ret_s) |> 
+    dplyr::mutate(
+      portfolio = "short"
+    ) |>
+    dplyr::bind_rows(.hml, .long) 
   
 }
 
@@ -137,7 +182,11 @@ multiple_portfolio_sorts <- function(.data,
       ret_s = sum(rs / dplyr::n()),
       .groups = "drop"
     ) |> 
-    dplyr::arrange(date, signal, portfolio)
+    dplyr::arrange(date, signal, portfolio) |> 
+    dplyr::mutate(
+      strategy = paste0("cs_", signal)
+    ) |> 
+    dplyr::select(-signal)
   
 }
 
@@ -167,9 +216,9 @@ multiple_hml <- function(.data,
       values_from = ret_s
     ) |> 
     dplyr::rename(short_p1 = p1) |>  # Rename the p1 column to short_p1
-    dplyr::inner_join(  # Join with long returns by date and signal
+    dplyr::inner_join(  # Join with long returns by date and strategy
       longs, 
-      dplyr::join_by(date, signal)
+      dplyr::join_by(date, strategy)
     ) |> 
     dplyr::mutate(
       ret_l     = long_p5 - short_p1,  # Compute HML return
@@ -178,7 +227,7 @@ multiple_hml <- function(.data,
     ) |> 
     dplyr::select(-c(short_p1, long_p5)) |>  # Drop intermediate columns
     dplyr::bind_rows(.data) |>  # Append original data to include all portfolios
-    dplyr::arrange(date, signal, portfolio)  # Sort by date, signal, and portfolio
+    dplyr::arrange(date, strategy, portfolio)  # Sort by date, strategy, and portfolio
   
 }
 
