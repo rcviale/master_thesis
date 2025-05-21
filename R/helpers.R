@@ -233,6 +233,33 @@ multiple_hml <- function(.data,
 
 
 
+rename_edge_portfolios <- function(.data){
+  #   This function renames the first and last portfolios (1 and 5 if using quintile sorts) to short and long respectively.
+  
+  .data |> 
+    dplyr::mutate(
+      portfolio = dplyr::case_when(
+        portfolio == "p1" ~ "short",
+        portfolio == "p5" ~ "long",
+        .default  =  portfolio
+      )
+    ) 
+  
+}
+
+
+
+organize_portfolios <- function(.data){
+  #   This function arranges the merged factors tibble and keeps only columns of interest.
+  
+  .data |> 
+    dplyr::arrange(date, strategy, portfolio) |> 
+    dplyr::select(date, strategy, portfolio, ret_l, ret_s)
+  
+}
+
+
+
 perf_stats <- function(.data){
   
   .data |> 
