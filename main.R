@@ -22,8 +22,6 @@ readxl::read_xlsx("Data/ds_data.xlsx", sheet = "quotes", skip = 1) |>
 usdgbp <- df |> 
   spr_to_outright(.froms = "United Kingdom Pound")
 
-rm(gbp_spr)
-
 #   Isolate all the quotes vs. GBP and compute the USDXXX cross rate
 gbpx <- df |> 
   drop_usdgbp() |>  # Filter out USDGBP, since we already dealt with that.
