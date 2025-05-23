@@ -3,16 +3,24 @@ lustig_returns <- function(.data,
                            .market = "mkt"){
   
   .data |> 
-    dplyr::mutate(px = log(px)) |>
     tidyr::pivot_wider(names_from  = c("mkt", "side"),
                        names_sep   = ".",
                        values_from = px) |> 
+    dplyr::mutate(
+      spot.mid = (spot.bid + spot.ask) / 2,
+      fwd.mid  = (fwd.bid + fwd.ask) / 2
+    ) |> 
+    purrr::modify_if(
+      .p = is.numeric,
+      .f = log
+    ) |> 
     dplyr::arrange(date, from) |> 
-    dplyr::group_by(from) |> 
+    dplyr::group_by(from) |>
     dplyr::mutate(
       rl = fwd.bid - dplyr::lead(spot.ask),
       rs = -fwd.ask + dplyr::lead(spot.bid),
-      rm = dplyr::lag(log( exp( fwd.bid ) + exp( fwd.ask ) )) - log( exp( spot.bid ) + exp( spot.ask ) ) 
+      rm = dplyr::lag(fwd.mid) - spot.mid
+      # rm = dplyr::lag(spot.mid) - spot.mid
     ) |> 
     dplyr::ungroup() |> 
     tidyr::drop_na(rl, rs, rm) #FIXME Can I drop later?
@@ -34,7 +42,7 @@ compute_signals <- function(.data){
       mom1     = dplyr::lag(rm),
       mom3     = slider::slide_dbl(.x = rm, .f = sum, .before = 2, .complete = TRUE) |> dplyr::lag(),
       mom6     = slider::slide_dbl(.x = rm, .f = sum, .before = 5, .complete = TRUE) |> dplyr::lag(),
-      mom12    = slider::slide_dbl(.x = rm, .f = sum, .before = 10, .complete = TRUE) |> dplyr::lag()
+      mom12    = slider::slide_dbl(.x = rm, .f = sum, .before = 11, .complete = TRUE) |> dplyr::lag()
     ) |> 
     dplyr::group_by(date) |> 
     dplyr::mutate(
@@ -68,6 +76,18 @@ compute_dol_carry <- function(.data){
 
 
 
+cs_logret <- function(.x){
+  #   This function computes the cross sectional return for a vector, and returns it in log return.
+  
+  log( mean( exp(.x) - 1) + 1 )
+  
+}
+
+cs_xs_simple <- function(.x){
+  mean( exp(.x) - 1 )
+}
+
+
 compute_dol <- function(.data){
   #   This function computes returns for the Dollar Carry strategy. 
   
@@ -95,12 +115,16 @@ compute_ts_factors <- function(.data){
   .data <- .data |> 
     dplyr::group_by(date, signal) |> 
     dplyr::summarise(
-      ret_l = if_else( rlang::is_empty( rl[var > 0] ), 0, mean( rl[var > 0], na.rm = T)),
-      ret_s = if_else( rlang::is_empty( rs[var < 0] ), 0, mean( rs[var < 0], na.rm = T)),
+      ret_l = if_else( rlang::is_empty( rl[var > 0] ), 
+                       0, 
+                       cs_logret(rl[var > 0]) ),
+      ret_s = if_else( rlang::is_empty( rs[var < 0] ), 
+                       0, 
+                       cs_logret(rs[var < 0]) ),
       .groups = "drop"
     ) |> 
     dplyr::mutate(
-      hml = ret_l - ret_s,
+      hml = ret_l + ret_s,
       strategy = paste0("ts_", signal)
     ) |> 
     dplyr::select(-signal)
@@ -178,8 +202,10 @@ multiple_portfolio_sorts <- function(.data,
     ) |>
     dplyr::group_by(portfolio, date, signal) |>
     dplyr::summarize(
-      ret_l = sum(rl / dplyr::n()),
-      ret_s = sum(rs / dplyr::n()),
+      # ret_l = cs_logret(rl),
+      # ret_s = cs_logret(rs),
+      ret_l = cs_xs_simple(rl),
+      ret_s = cs_xs_simple(rs),
       .groups = "drop"
     ) |> 
     dplyr::arrange(date, signal, portfolio) |> 
@@ -221,7 +247,7 @@ multiple_hml <- function(.data,
       dplyr::join_by(date, strategy)
     ) |> 
     dplyr::mutate(
-      ret_l     = long_p5 - short_p1,  # Compute HML return
+      ret_l     = long_p5 + short_p1,  # Compute HML return
       portfolio = "hml",  # Label the portfolio as "hml"
       ret_s     = NA  # Set short return to NA (not applicable)
     ) |> 
@@ -263,7 +289,7 @@ organize_portfolios <- function(.data){
 perf_stats <- function(.data){
   
   .data |> 
-    group_by(signal, portfolio) |> 
+    group_by(strategy) |> 
     summarise(
       ann_ret = (exp(mean(ret_l) * 12) - 1) * 100,
       ann_vol = sd(exp(ret_l) - 1) * sqrt(12) * 100,
