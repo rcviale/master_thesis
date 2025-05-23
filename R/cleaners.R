@@ -268,6 +268,9 @@ lustig_cleaning <- function(.data,
       # For non-Eurozone do nothing (eudate == NA)
       ( (date < eudate) | is.na(eudate) )  &
         
+        # Euro should only start after January 1999
+        !(from == "Euro" & date <= "1998-12-31") & 
+        
         # South Africa from the end of July 1985 to the end of August 1985
         !(from == "South African Rand" & date >= "1985-07-01" & date <= "1985-08-31") &
         
