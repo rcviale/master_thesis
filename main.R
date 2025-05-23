@@ -104,10 +104,19 @@ source("R/plotters.R")
 
 #   This chunk will plot the time series for each currency (group). This is to check if any of the time series behaves
 # strangely, and if so, it's easy to see which market/side does so.
-# read_rds("Data/all_outright.rds") |>  
-#   mutate(label = paste(mkt, side)) |> 
-#   group_split(from) |> 
-#   walk(group_line_plot)
+read_rds("Data/all_outright.rds") |>
+  mutate(label = paste(mkt, side)) |>
+  group_split(from) |>
+  walk(
+    .f = ~group_line_plot(
+      .data  = .x,
+      .x     = date,
+      .y     = px,
+      .color = label,
+      .title = from,
+      .path  = "Plots/Individual/"
+    )
+  )
 
 #   Compute returns and signals
 df <- read_rds("Data/all_outright.rds") |>  
@@ -187,17 +196,22 @@ factors |>
   )
 
 factors |> 
+  arrange(strategy) |> 
   pivot_wider(names_from = strategy, values_from = ret_l) |> 
   select(-date) |> 
   cor(use = "pairwise.complete.obs") |> 
   corrplot::corrplot(method = "color", type = "lower")
+
+factors |> 
+  perf_stats()
 
 portfolios |> 
   filter(portfolio %in% c("single", "hml", "long", "short")) |> 
   group_by(strategy, portfolio) |> 
   mutate(
     ret      = if_else(portfolio == "short", ret_s, ret_l),
-    cum_ret  = exp(cumsum(ret)) - 1,
+    # cum_ret  = exp(cumsum(ret)) - 1,
+    cum_ret = cumprod(1 + ret_l) - 1
   ) |> 
   ungroup() |> 
   group_split(strategy) |> 
