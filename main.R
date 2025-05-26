@@ -127,14 +127,14 @@ df <- read_rds("Data/all_outright.rds") |>
   compute_signals()
 
 #   Simple plot for amount of currencies over time
-df |>
-  group_by(date) |>
-  mutate(N = n()) |>
-  simple_line(.x = date,
-              .y = N)
+# df |>
+#   group_by(date) |>
+#   mutate(N = n()) |>
+#   simple_line(.x = date,
+#               .y = N)
 #   From the plot, we can see N<=3 (i.e. insufficient) until 1990-05-31. Thus, we will start from 1990-05-31.
 df <- df |> 
-  filter(date > "1990-05-31")
+  filter(date >= "1990-05-31")
 
 #   Compute Dollar Carry strategy
 portfolios <- df |> 
@@ -151,7 +151,7 @@ portfolios <- df |>
 
 #   Drop unecessary columns, drop NA's, pivot longer and keep only dates where N>=20.
 df <- df |> 
-  select(-starts_with(c("spot.", "fwd.")), -c(avg_fd, rm)) |> 
+  select(-starts_with(c("spot.", "fwd.")), avg_fd) |> 
   pivot_longer(
     -c(date, from, rl, rs),
     names_to  = "signal",
@@ -183,23 +183,33 @@ factors <- portfolios |>
 factors |> 
   group_by(strategy) |> 
   mutate(
-    cum_ret = exp(cumsum(ret_l)) - 1
+    cum_ret = exp( cumsum(ret_l) ) - 1
   ) |> 
   multiple_lines(
     .x     = date,
     .y     = cum_ret,
     .col   = strategy,
-    .title = "Factors",
+    .title = "Cumulative Factor Simple Returns",
     .xlab  = "Date",
     .ylab  = "Simple Return"
   )
 
 factors |> 
-  arrange(strategy) |> 
-  pivot_wider(names_from = strategy, values_from = ret_l) |> 
+  pivot_wider(
+    names_from = strategy, 
+    values_from = ret_l
+  ) |> 
   select(-date) |> 
-  cor(use = "pairwise.complete.obs") |> 
-  corrplot::corrplot(method = "color", type = "lower")
+  cor(
+    use = "pairwise.complete.obs"
+  ) |> 
+  corrplot::corrplot(
+    method = "color", 
+    type = "lower",
+    addCoef.col = "black",
+    addCoefasPercent = T,
+    order = "AOE"
+  )
 
 factors |> 
   perf_stats()
