@@ -3,12 +3,10 @@ lustig_returns <- function(.data,
                            .market = "mkt"){
   
   .data |> 
-    tidyr::pivot_wider(names_from  = c("mkt", "side"),
-                       names_sep   = ".",
-                       values_from = px) |> 
-    dplyr::mutate(
-      spot.mid = (spot.bid + spot.ask) / 2,
-      fwd.mid  = (fwd.bid + fwd.ask) / 2
+    tidyr::pivot_wider(
+      names_from  = c(.market, .side),
+      names_sep   = ".",
+      values_from = px
     ) |> 
     purrr::modify_if(
       .p = is.numeric,
@@ -19,12 +17,9 @@ lustig_returns <- function(.data,
     dplyr::mutate(
       rl = fwd.bid - dplyr::lead(spot.ask),
       rs = -fwd.ask + dplyr::lead(spot.bid),
-      # rm = dplyr::lag(fwd.mid) - spot.mid
-      # rm = dplyr::lag(spot.mid) - spot.mid
-      rm = rl
     ) |> 
     dplyr::ungroup() |> 
-    tidyr::drop_na(rl, rs) #FIXME Can I drop later?
+    tidyr::drop_na(rl, rs) # NAs can be dropped here because there are no observations where we have one and not the other.
   
 }
 
@@ -40,10 +35,10 @@ compute_signals <- function(.data){
     dplyr::group_by(from) |> 
     dplyr::mutate(
       # Momentum
-      mom1     = dplyr::lag(rm),
-      mom3     = slider::slide_dbl(.x = rm, .f = sum, .before = 2, .complete = TRUE) |> dplyr::lag(),
-      mom6     = slider::slide_dbl(.x = rm, .f = sum, .before = 5, .complete = TRUE) |> dplyr::lag(),
-      mom12    = slider::slide_dbl(.x = rm, .f = sum, .before = 10, .complete = TRUE) |> dplyr::lag()
+      mom1     = dplyr::lag(rl),
+      mom3     = slider::slide_dbl(.x = rl, .f = sum, .before = 2, .complete = TRUE) |> dplyr::lag(),
+      mom6     = slider::slide_dbl(.x = rl, .f = sum, .before = 5, .complete = TRUE) |> dplyr::lag(),
+      mom12    = slider::slide_dbl(.x = rl, .f = sum, .before = 10, .complete = TRUE) |> dplyr::lag()
     ) |> 
     dplyr::group_by(date) |> 
     dplyr::mutate(
@@ -277,6 +272,7 @@ organize_portfolios <- function(.data){
 
 
 perf_stats <- function(.data){
+  #   This function computes performance statistics. Input should be in log returns.
   
   .data |> 
     group_by(strategy) |> 
@@ -289,6 +285,7 @@ perf_stats <- function(.data){
       sharpe  = ann_ret / ann_vol,
     ) |> 
     purrr::modify_if(.p = is.numeric,
-                     .f = ~round(.x, 2))
+                     .f = ~round(.x, 2)) |> 
+    dplyr::arrange(dplyr::desc(sharpe))
   
 }
