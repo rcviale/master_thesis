@@ -102,38 +102,39 @@ source("R/plotters.R")
 
 #   This chunk will plot the time series for each currency (group). This is to check if any of the time series behaves
 # strangely, and if so, it's easy to see which market/side does so.
-read_rds("Data/all_outright.rds") |>
-  mutate(label = paste(mkt, side)) |>
-  group_split(from) |>
-  walk(
-    .f = ~group_line_plot(
-      .data  = .x,
-      .x     = date,
-      .y     = px,
-      .color = label,
-      .title = from,
-      .path  = "Plots/Individual/"
-    )
-  )
+# read_rds("Data/all_outright.rds") |>
+#   mutate(label = paste(mkt, side)) |>
+#   group_split(from) |>
+#   walk(
+#     .f = ~group_line_plot(
+#       .data  = .x,
+#       .x     = date,
+#       .y     = px,
+#       .color = label,
+#       .title = from,
+#       .path  = "Plots/Individual/"
+#     )
+#   )
 
 #   Compute returns and signals
 df <- read_rds("Data/all_outright.rds") |>  
   lustig_returns() |> 
   # rl_t (rs_t) = the return I get in month t+1 for going long (short) in month t
+  # lag(rl_t) = rl_t-1 = the return I get in month t for going long (short) in month t-1
   # rm_t = the midpoint return I got in the current month t (non look ahead)
   # fwd_disc_t = the carry I observe in month t and expect to get in month t+1
   # => fwd_disc is the expectation, rl is what realized
   compute_signals()
 
 #   Simple plot for amount of currencies over time
-# df |> 
-#   group_by(date) |> 
-#   mutate(N = n()) |> 
-#   simple_line(.x = date,
-#               .y = N)
-#   From the plot, we can see N<=3 (i.e. insufficient) until 1990-04-30. Thus, we will start from 1990-05-31.
+df |>
+  group_by(date) |>
+  mutate(N = n()) |>
+  simple_line(.x = date,
+              .y = N)
+#   From the plot, we can see N<=3 (i.e. insufficient) until 1990-05-31. Thus, we will start from 1990-05-31.
 df <- df |> 
-  filter(date >= "1990-05-31")
+  filter(date > "1990-05-31")
 
 #   Compute Dollar Carry strategy
 portfolios <- df |> 
@@ -204,12 +205,10 @@ factors |>
   perf_stats()
 
 portfolios |> 
-  filter(portfolio %in% c("single", "hml", "long", "short")) |> 
   group_by(strategy, portfolio) |> 
   mutate(
     ret      = if_else(portfolio == "short", ret_s, ret_l),
-    # cum_ret  = exp(cumsum(ret)) - 1,
-    cum_ret = cumprod(1 + ret_l) - 1
+    cum_ret  = exp(cumsum(ret)) - 1
   ) |> 
   ungroup() |> 
   group_split(strategy) |> 
@@ -220,7 +219,7 @@ portfolios |>
       .y     = cum_ret,
       .color = portfolio,
       .title = strategy,
-      .path  = "Plots/"
+      .path  = "Plots/by_strategy/"
     )
   )
 
