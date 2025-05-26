@@ -4,7 +4,7 @@ lustig_returns <- function(.data,
   
   .data |> 
     tidyr::pivot_wider(
-      names_from  = c(.market, .side),
+      names_from  = c( {{ .market }} , {{ .side }} ),
       names_sep   = ".",
       values_from = px
     ) |> 
