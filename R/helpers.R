@@ -19,11 +19,12 @@ lustig_returns <- function(.data,
     dplyr::mutate(
       rl = fwd.bid - dplyr::lead(spot.ask),
       rs = -fwd.ask + dplyr::lead(spot.bid),
-      rm = dplyr::lag(fwd.mid) - spot.mid
+      # rm = dplyr::lag(fwd.mid) - spot.mid
       # rm = dplyr::lag(spot.mid) - spot.mid
+      rm = rl
     ) |> 
     dplyr::ungroup() |> 
-    tidyr::drop_na(rl, rs, rm) #FIXME Can I drop later?
+    tidyr::drop_na(rl, rs) #FIXME Can I drop later?
   
 }
 
@@ -42,7 +43,7 @@ compute_signals <- function(.data){
       mom1     = dplyr::lag(rm),
       mom3     = slider::slide_dbl(.x = rm, .f = sum, .before = 2, .complete = TRUE) |> dplyr::lag(),
       mom6     = slider::slide_dbl(.x = rm, .f = sum, .before = 5, .complete = TRUE) |> dplyr::lag(),
-      mom12    = slider::slide_dbl(.x = rm, .f = sum, .before = 11, .complete = TRUE) |> dplyr::lag()
+      mom12    = slider::slide_dbl(.x = rm, .f = sum, .before = 10, .complete = TRUE) |> dplyr::lag()
     ) |> 
     dplyr::group_by(date) |> 
     dplyr::mutate(
@@ -79,13 +80,10 @@ compute_dol_carry <- function(.data){
 cs_logret <- function(.x){
   #   This function computes the cross sectional return for a vector, and returns it in log return.
   
-  log( mean( exp(.x) - 1) + 1 )
+  log( mean( exp(.x) - 1, na.rm = T ) + 1 )
   
 }
 
-cs_xs_simple <- function(.x){
-  mean( exp(.x) - 1 )
-}
 
 
 compute_dol <- function(.data){
@@ -117,7 +115,7 @@ compute_ts_factors <- function(.data){
     dplyr::summarise(
       ret_l = if_else( rlang::is_empty( rl[var > 0] ), 
                        0, 
-                       cs_logret(rl[var > 0]) ),
+                       cs_logret( rl[var > 0]) ),
       ret_s = if_else( rlang::is_empty( rs[var < 0] ), 
                        0, 
                        cs_logret(rs[var < 0]) ),
@@ -202,10 +200,10 @@ multiple_portfolio_sorts <- function(.data,
     ) |>
     dplyr::group_by(portfolio, date, signal) |>
     dplyr::summarize(
-      # ret_l = cs_logret(rl),
-      # ret_s = cs_logret(rs),
-      ret_l = cs_xs_simple(rl),
-      ret_s = cs_xs_simple(rs),
+      ret_l = cs_logret(rl),
+      ret_s = cs_logret(rs),
+      # ret_l = cs_xs_simple(rl),
+      # ret_s = cs_xs_simple(rs),
       .groups = "drop"
     ) |> 
     dplyr::arrange(date, signal, portfolio) |> 
@@ -226,32 +224,24 @@ multiple_hml <- function(.data,
   high_id <- paste0("p", .n_portfolios)
   
   longs <- .data |> 
-    dplyr::select(-ret_s) |>  # Remove short return column
     dplyr::filter(portfolio == high_id) |>  # Filter for the highest portfolio (long leg)
-    tidyr::pivot_wider(  # Reshape data to wide format, long returns in one column
-      names_from  = portfolio,
-      values_from = ret_l
-    ) |> 
-    dplyr::rename(long_p5 = p5)  # Rename the p5 column to long_p5
+    dplyr::select(-c(portfolio, ret_s)) |> 
+    dplyr::rename(long = ret_l)
   
   .data |> 
-    dplyr::select(-ret_l) |>  # Remove long return column
     dplyr::filter(portfolio == "p1") |>  # Filter for the lowest portfolio (short leg)
-    tidyr::pivot_wider(  # Reshape data to wide format, short returns in one column
-      names_from  = portfolio,
-      values_from = ret_s
-    ) |> 
-    dplyr::rename(short_p1 = p1) |>  # Rename the p1 column to short_p1
+    dplyr::select(-c(ret_l, portfolio)) |>  # Remove long return column
+    dplyr::rename(short = ret_s) |>  # Rename the p1 column to short_p1
     dplyr::inner_join(  # Join with long returns by date and strategy
       longs, 
       dplyr::join_by(date, strategy)
     ) |> 
     dplyr::mutate(
-      ret_l     = long_p5 + short_p1,  # Compute HML return
-      portfolio = "hml",  # Label the portfolio as "hml"
+      ret_l     = long + short,  # Compute HML return
+      portfolio = as.factor("hml"),  # Label the portfolio as "hml"
       ret_s     = NA  # Set short return to NA (not applicable)
     ) |> 
-    dplyr::select(-c(short_p1, long_p5)) |>  # Drop intermediate columns
+    dplyr::select(-c(short, long)) |>  # Drop intermediate columns
     dplyr::bind_rows(.data) |>  # Append original data to include all portfolios
     dplyr::arrange(date, strategy, portfolio)  # Sort by date, strategy, and portfolio
   
