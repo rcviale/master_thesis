@@ -151,7 +151,7 @@ portfolios <- df |>
 
 #   Drop unecessary columns, drop NA's, pivot longer and keep only dates where N>=20.
 df <- df |> 
-  select(-starts_with(c("spot.", "fwd.")), avg_fd) |> 
+  select(-starts_with(c("spot.", "fwd.")), -avg_fd) |> 
   pivot_longer(
     -c(date, from, rl, rs),
     names_to  = "signal",
