@@ -96,25 +96,13 @@ read_rds("Data/all_outright.rds") |>
 rm(list = ls())
 
 ##### Returns and Signals #####
-source("R/startup.R")
-source("R/helpers.R")
-source("R/plotters.R")
-
-#   This chunk will plot the time series for each currency (group). This is to check if any of the time series behaves
-# strangely, and if so, it's easy to see which market/side does so.
-# read_rds("Data/all_outright.rds") |>
-#   mutate(label = paste(mkt, side)) |>
-#   group_split(from) |>
-#   walk(
-#     .f = ~group_line_plot(
-#       .data  = .x,
-#       .x     = date,
-#       .y     = px,
-#       .color = label,
-#       .title = from,
-#       .path  = "Plots/Individual/"
-#     )
-#   )
+#   Load necessary packages and scripts
+c(
+  "R/startup.R", 
+  "R/helpers.R",
+  "R/plotters.R"
+) |> 
+  walk(.f = source)
 
 #   Compute returns and signals
 df <- read_rds("Data/all_outright.rds") |>  
@@ -126,13 +114,7 @@ df <- read_rds("Data/all_outright.rds") |>
   # => fwd_disc is the expectation, rl is what realized
   compute_signals()
 
-#   Simple plot for amount of currencies over time
-# df |>
-#   group_by(date) |>
-#   mutate(N = n()) |>
-#   simple_line(.x = date,
-#               .y = N)
-#   From the plot, we can see N<=3 (i.e. insufficient) until 1990-05-31. Thus, we will start from 1990-05-31.
+#   N <= 3 (i.e. insufficient) until 1990-05-31. Thus, we start from 1990-05-31.
 df <- df |> 
   filter(date >= "1990-05-31")
 
@@ -176,10 +158,56 @@ portfolios <- df |>
   bind_rows(portfolios) |> 
   organize_portfolios()
 
+#   Save all portfolios
+portfolios |> 
+  readr::write_rds("Data/portfolios.rds")
+
+
+
+##### Plots #####
+#   Load necessary packages and scripts
+c(
+  "R/startup.R", 
+  "R/plotters.R"
+) |> 
+  walk(.f = source)
+
+###### Individual for each currency ###### 
+#   This chunk will plot the time series for each currency (group). This is to check if any of the time series behaves
+# strangely, and if so, it's easy to see which market/side does so.
+read_rds("Data/all_outright.rds") |>
+  mutate(label = paste(mkt, side)) |>
+  group_split(from) |>
+  walk(
+    .f = ~group_line_plot(
+      .data  = .x,
+      .x     = date,
+      .y     = px,
+      .color = label,
+      .title = from,
+      .path  = "Plots/Individual/"
+    )
+  )
+
+###### Amount of currencies over time ###### 
+#   Simple plot for amount of currencies over time
+df <- read_rds("Data/all_outright.rds") |> 
+  lustig_returns() |> 
+  compute_signals()
+
+df |>
+  group_by(date) |>
+  mutate(N = n()) |>
+  simple_line(.x = date,
+              .y = N)
+
+###### Untimed factors (isolated differentials) ###### 
+#   Isolate only the factors, excluding the mid portfolios
 factors <- portfolios |> 
   filter(portfolio %in% c("single", "hml")) |> 
   select(-c(ret_s, portfolio))
 
+#   Line plot for untimed factors
 factors |> 
   group_by(strategy) |> 
   mutate(
@@ -189,11 +217,12 @@ factors |>
     .x     = date,
     .y     = cum_ret,
     .col   = strategy,
-    .title = "Cumulative Factor Simple Returns",
+    .title = "Cumulative Simple Returns for each Untimed Factor",
     .xlab  = "Date",
     .ylab  = "Simple Return"
   )
 
+#   Correlation plot for untimed factors
 factors |> 
   pivot_wider(
     names_from = strategy, 
@@ -211,9 +240,8 @@ factors |>
     order = "AOE"
   )
 
-factors |> 
-  perf_stats()
-
+###### Untimed portfolios (all portfolios by strategy) ###### 
+#   Line plot for portfolios included in each signal
 portfolios |> 
   group_by(strategy, portfolio) |> 
   mutate(
@@ -232,4 +260,3 @@ portfolios |>
       .path  = "Plots/by_strategy/"
     )
   )
-
