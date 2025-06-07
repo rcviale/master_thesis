@@ -7,7 +7,12 @@ source("R/checkers.R")
 #   Import table with base/price currencies, spread scales, tickers and countries
 gen_inf <- readxl::read_xlsx("Data/ds_data.xlsx", sheet = "fromto")
 
-df <- readxl::read_xlsx("Data/ds_data.xlsx", sheet = "quotes", skip = 1) |> 
+df <- readxl::read_xlsx(
+  path      = "Data/ds_data.xlsx", 
+  sheet     = "quotes", 
+  skip      = 1,
+  col_types = c("date", rep("numeric", 304))
+  ) |> 
   rename(date = `Code`) |> 
   raw_to_bidask() |> # Function that transforms raw data to a long tibble with identifiers for bid/ask.
   fromto_scale(gen_inf, code, scale) |> # Function to join with general info tibble and scale all spreads.
@@ -15,7 +20,12 @@ df <- readxl::read_xlsx("Data/ds_data.xlsx", sheet = "quotes", skip = 1) |>
   drop_na() # Drop missing prices observations
 
 # C1: After these computations, but before dropping NAs, we should have 50% of observations being bids/asks/spots/forwards.
-readxl::read_xlsx("Data/ds_data.xlsx", sheet = "quotes", skip = 1) |> 
+readxl::read_xlsx(
+  path      = "Data/ds_data.xlsx", 
+  sheet     = "quotes", 
+  skip      = 1,
+  col_types = c("date", rep("numeric", 304))
+) |> 
   check1() # Ideal: 0
 
 #   Isolate USDGBP spot and forward quotes, compute outright forward quotes
@@ -95,14 +105,14 @@ read_rds("Data/all_outright.rds") |>
 
 rm(list = ls())
 
-##### Returns and Signals #####
+##### Returns, Signals and Untimed Portfolios #####
 #   Load necessary packages and scripts
 c(
   "R/startup.R", 
   "R/helpers.R",
   "R/plotters.R"
 ) |> 
-  walk(.f = source)
+  purrr::walk(.f = source)
 
 #   Compute returns and signals
 df <- read_rds("Data/all_outright.rds") |>  
@@ -114,9 +124,9 @@ df <- read_rds("Data/all_outright.rds") |>
   # => fwd_disc is the expectation, rl is what realized
   compute_signals()
 
-#   N <= 3 (i.e. insufficient) until 1990-05-31. Thus, we start from 1990-05-31.
+#   N <= 3 (i.e. insufficient) until 1990-05-31. Thus, we start from 1990-05-30
 df <- df |> 
-  filter(date >= "1990-05-31")
+  filter(date >= "1990-05-30")
 
 #   Compute Dollar Carry strategy
 portfolios <- df |> 
@@ -162,6 +172,27 @@ portfolios <- df |>
 portfolios |> 
   readr::write_rds("Data/portfolios.rds")
 
+##### Timed Portfolios #####
+#   Load necessary packages and scripts
+c(
+  "R/startup.R",
+  "R/helpers.R",
+  "R/plotters.R"
+) |> 
+  purrr::walk(.f = source)
+
+#   Load data
+readr::read_rds("Data/portfolios.rds") |>
+  select(-ret_s) |> 
+  group_by(strategy, portfolio) |>
+  filter(portfolio == "hml" & strategy == "cs_carry") |> 
+  mutate(
+    cumvol   = slider::slide_dbl(.x = ret_l, .f = sd, .before = Inf, .complete = TRUE) |> dplyr::lag(),
+    mom1     = dplyr::lag(ret_l),
+    mom3     = slider::slide_dbl(.x = ret_l, .f = sum, .before = 2, .complete = TRUE) |> dplyr::lag(),
+    mom6     = slider::slide_dbl(.x = ret_l, .f = sum, .before = 5, .complete = TRUE) |> dplyr::lag(),
+    mom12    = slider::slide_dbl(.x = ret_l, .f = sum, .before = 10, .complete = TRUE) |> dplyr::lag()
+  )
 
 
 ##### Plots #####
