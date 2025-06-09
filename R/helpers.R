@@ -8,11 +8,17 @@ lustig_returns <- function(.data,
       names_sep   = ".",
       values_from = px
     ) |> 
+    dplyr::arrange(date, from) |> 
+    dplyr::mutate(
+      date = ceiling_date(date, unit = "month") - 1
+    ) |> 
+    dplyr::group_by(date, from) |>
+    dplyr::slice_tail(n = 1) |>
+    dplyr::ungroup() |>
     purrr::modify_if(
       .p = is.numeric,
       .f = log
     ) |> 
-    dplyr::arrange(date, from) |> 
     dplyr::group_by(from) |>
     dplyr::mutate(
       rl = fwd.bid - dplyr::lead(spot.ask),
