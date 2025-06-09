@@ -115,7 +115,7 @@ c(
   purrr::walk(.f = source)
 
 #   Compute returns and signals
-df <- read_rds("Data/all_outright.rds") |>  
+df <- read_rds("Data/all_outright.rds") |>
   lustig_returns() |> 
   # rl_t (rs_t) = the return I get in month t+1 for going long (short) in month t
   # lag(rl_t) = rl_t-1 = the return I get in month t for going long (short) in month t-1
@@ -141,7 +141,7 @@ portfolios <- df |>
   compute_dol() |> 
   bind_rows(portfolios)
 
-#   Drop unecessary columns, drop NA's, pivot longer and keep only dates where N>=20.
+#   Drop unnecessary columns, drop NA's, pivot longer and keep only dates where N>=20.
 df <- df |> 
   select(-starts_with(c("spot.", "fwd.")), -avg_fd) |> 
   pivot_longer(
@@ -172,7 +172,10 @@ portfolios <- df |>
 portfolios |> 
   readr::write_rds("Data/portfolios.rds")
 
+rm(list = ls())
+
 ##### Timed Portfolios #####
+###### Realized Volatility Computation #####
 #   Load necessary packages and scripts
 c(
   "R/startup.R",
@@ -201,13 +204,17 @@ c(
   "R/startup.R", 
   "R/plotters.R"
 ) |> 
-  walk(.f = source)
+  purrr::walk(.f = source)
 
 ###### Individual for each currency ###### 
 #   This chunk will plot the time series for each currency (group). This is to check if any of the time series behaves
-# strangely, and if so, it's easy to see which market/side does so.
+# strangely, and if so, it's easy to see which market/side does so. Note that since the geom_line is used, so only 
+# consecutive data points are plotted, meaning if there are isolated points (e.g. Cyprian Pound) these won't be 
+# plotted.
 read_rds("Data/all_outright.rds") |>
   mutate(label = paste(mkt, side)) |>
+  select(-c(mkt, side)) |> 
+  complete(date, label, from) |> # Turn all NA's into explicit form
   group_split(from) |>
   walk(
     .f = ~group_line_plot(
@@ -216,7 +223,7 @@ read_rds("Data/all_outright.rds") |>
       .y     = px,
       .color = label,
       .title = from,
-      .path  = "Plots/Individual/"
+      .path  = "Plots/individual_currencies/"
     )
   )
 
