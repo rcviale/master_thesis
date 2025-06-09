@@ -11,7 +11,7 @@ group_line_plot <- function(.data,
   
   p <- .data |> 
     ggplot2::ggplot(ggplot2::aes(x = {{ .x }}, y = {{ .y }}, color = {{ .color}})) +  # Initialize ggplot with aesthetics mapping
-    ggplot2::geom_line(linewidth = 1) +  # Add lines for each group with specified line width
+    ggplot2::geom_line(linewidth = 1, na.rm = TRUE) +  # Add lines for each group with specified line width
     ggplot2::labs(title = .title) +  # Set the plot title based on the 'from' column
     ggplot2::theme_minimal()  # Apply a minimalistic theme to the plot
   
@@ -55,7 +55,8 @@ simple_line <- function(.data,
     ggplot2::geom_line(  # Add a line geometry to the plot
       ggplot2::aes(x = {{ .x }}, y = {{ .y }}),  # Map aesthetics: x and y variables
       col       = "red",     # Set line color
-      linewidth = 1          # Set line width
+      linewidth = 1,         # Set line width
+      na.rm     = TRUE
     ) +
     ggplot2::labs(           # Add labels: title, x-axis label, y-axis label
       title = ifelse(is.null(.title), paste0("Line Plot of ", rlang::enexpr(.y), " over ", rlang::enexpr(.x)), .title),
@@ -84,7 +85,8 @@ multiple_lines <- function(.data,
     ggplot2::ggplot() +  # Initialize a ggplot object with the input data
     ggplot2::geom_line(  # Add a line geometry to the plot
       ggplot2::aes(x = {{ .x }}, y = {{ .y }}, color = {{ .col }}),  # Map aesthetics: x, y variables and color
-      linewidth = 1          # Set line width
+      linewidth = 1,          # Set line width
+      na.rm = TRUE
     ) +
     ggplot2::labs(           # Add labels: title, x-axis label, y-axis label
       title = ifelse(is.null(.title), paste0("Line Plot of ", rlang::enexpr(.y), " over ", rlang::enexpr(.x)), .title),
