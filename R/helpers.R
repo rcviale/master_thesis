@@ -44,7 +44,7 @@ compute_signals <- function(.data){
       mom1     = dplyr::lag(rl),
       mom3     = slider::slide_dbl(.x = rl, .f = sum, .before = 2, .complete = TRUE) |> dplyr::lag(),
       mom6     = slider::slide_dbl(.x = rl, .f = sum, .before = 5, .complete = TRUE) |> dplyr::lag(),
-      mom12    = slider::slide_dbl(.x = rl, .f = sum, .before = 10, .complete = TRUE) |> dplyr::lag()
+      mom12    = slider::slide_dbl(.x = rl, .f = sum, .before = 11, .complete = TRUE) |> dplyr::lag()
     ) |> 
     dplyr::group_by(date) |> 
     dplyr::mutate(
@@ -82,6 +82,15 @@ cs_logret <- function(.x){
   #   This function computes the cross sectional return for a vector, and returns it in log return.
   
   log( mean( exp(.x) - 1, na.rm = T ) + 1 )
+  
+}
+
+
+
+cs_wlogret <- function(.x, .w){
+  #   This function computes the cross sectional return for a vector, and returns it in log return.
+  
+  log( sum(.w * ( exp(.x) - 1 ), na.rm = T ) + 1 )
   
 }
 
@@ -266,25 +275,138 @@ rename_edge_portfolios <- function(.data){
 
 
 
-organize_portfolios <- function(.data){
-  #   This function arranges the merged factors tibble and keeps only columns of interest.
+switch_shorts <- function(.data){
   
   .data |> 
-    dplyr::arrange(date, strategy, portfolio) |> 
-    dplyr::select(date, strategy, portfolio, ret_l, ret_s)
+    dplyr::mutate(ret = if_else(portfolio == "short", ret_s, ret_l)) |> 
+    dplyr::select(-c(ret_l, ret_s))
   
 }
 
 
 
-perf_stats <- function(.data){
+compute_naive <- function(.data,
+                          .portfolios = c("hml", "single")){
+  
+  naives <- .data |> 
+    dplyr::filter(portfolio %in% c("hml", "single")) |> 
+    dplyr::select(-portfolio) |> 
+    dplyr::group_by(date) |> 
+    dplyr::summarise(
+      ret = mean(ret, na.rm = TRUE)
+    ) |> 
+    dplyr::mutate(
+      strategy  = "naive",
+      portfolio = "1/N"
+    )
+  
+  .data |> 
+    dplyr::bind_rows(naives)
+  
+}
+
+
+
+organize_portfolios <- function(.data,
+                                .timed = FALSE){
+  #   This function arranges the merged factors tibble and keeps only columns of interest.
+  
+  if (.timed == TRUE){
+    
+    .data |> 
+      dplyr::arrange(date, strategy, portfolio) |> 
+      dplyr::select(date, strategy, portfolio, timing, ret)
+    
+  } else {
+    
+    .data |> 
+      dplyr::arrange(date, strategy, portfolio) |> 
+      dplyr::select(date, strategy, portfolio, ret)
+    
+  }
+  
+}
+
+
+
+timed_momentum <- function(.data,
+                           .mom_windows = c(1, 3, 6, 12),
+                           .vol_windows = c(12, 36, 60)){
+  
+  .data |>
+    mutate(vol_window = list(.vol_windows)) |> 
+    unnest(vol_window) |> 
+    group_by(strategy, portfolio, vol_window) |>
+    mutate(
+      vol = sqrt(12) * (
+        slider::slide_dbl(
+          .x = ret,
+          .f = sd,
+          .before = unique(vol_window) - 1,
+          .complete = TRUE
+        ) |> dplyr::lag()
+      )
+    ) |> 
+    ungroup() |> 
+    mutate(mom_window = list(.mom_windows)) |>
+    unnest(mom_window) |> 
+    group_by(strategy, portfolio, vol_window, mom_window) |>
+    mutate(
+      mom       = (12 / mom_window) * (
+        slider::slide_dbl(
+          .x        = ret,
+          .f        = sum,
+          .before   = unique(mom_window) - 1,
+          .complete = TRUE
+        ) |> dplyr::lag()
+      ),
+      timing    = paste("mom", mom_window, vol_window, sep = "_"),
+    ) |>
+    drop_na(mom, vol) |> 
+    group_by(date, strategy, portfolio, timing) |> 
+    mutate(
+      w_mom     = max(-2, min(2, mom / vol)),
+      ret       = cs_wlogret(ret, w_mom)
+    ) |> 
+    ungroup() |> 
+    select(-c(vol_window, mom_window, mom, vol, w_mom))
+  
+}
+
+
+
+timed_variance <- function(.data){
+  
+  .data |>
+    group_by(strategy, portfolio) |> 
+    mutate(
+      rvar   = dplyr::lag(ret)^2, 
+      cumvar = slider::slide_dbl(.x = rvar, .f = ~mean(.x, na.rm = TRUE), .before = Inf, .complete = TRUE
+      )
+    ) |> 
+    group_by(date, strategy, portfolio) |> 
+    mutate(
+      w_var  = min(2, rvar / cumvar),
+      ret    = cs_wlogret(ret, w_var),
+      timing = "var"
+    ) |> 
+    drop_na(w_var) |> 
+    ungroup() |> 
+    select(-c(rvar, cumvar, w_var))
+  
+}
+
+
+
+perf_stats <- function(.data,
+                       .ret = ret){
   #   This function computes performance statistics. Input should be in log returns.
   
   .data |> 
     group_by(strategy) |> 
     summarise(
-      ann_ret = (exp(mean(ret_l) * 12) - 1) * 100,
-      ann_vol = sd(exp(ret_l) - 1) * sqrt(12) * 100,
+      ann_ret = (exp(mean( {{ .ret }} ) * 12) - 1) * 100,
+      ann_vol = sd(exp( {{ .ret }} ) - 1) * sqrt(12) * 100,
       .groups = "drop"
     ) |>
     dplyr::mutate(
