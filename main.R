@@ -12,7 +12,7 @@ df <- readxl::read_xlsx(
   sheet     = "quotes", 
   skip      = 1,
   col_types = c("date", rep("numeric", 304))
-  ) |> 
+) |> 
   rename(date = `Code`) |> 
   raw_to_bidask() |> # Function that transforms raw data to a long tibble with identifiers for bid/ask.
   fromto_scale(gen_inf, code, scale) |> # Function to join with general info tibble and scale all spreads.
@@ -166,6 +166,8 @@ portfolios <- df |>
   multiple_hml() |>  # Default is 5 portfolios
   rename_edge_portfolios() |> 
   bind_rows(portfolios) |> 
+  switch_shorts() |> 
+  compute_naive() |> 
   organize_portfolios()
 
 #   Save all portfolios
@@ -175,7 +177,6 @@ portfolios |>
 rm(list = ls())
 
 ##### Timed Portfolios #####
-###### Realized Volatility Computation #####
 #   Load necessary packages and scripts
 c(
   "R/startup.R",
@@ -185,17 +186,50 @@ c(
   purrr::walk(.f = source)
 
 #   Load data
-readr::read_rds("Data/portfolios.rds") |>
-  select(-ret_s) |> 
-  group_by(strategy, portfolio) |>
-  filter(portfolio == "hml" & strategy == "cs_carry") |> 
+timed_portfolios <- readr::read_rds("Data/portfolios.rds") |>
+  timed_momentum()
+
+timed_portfolios <-  readr::read_rds("Data/portfolios.rds") |>
+  timed_variance() |> 
+  bind_rows(timed_portfolios) |> 
+  organize_portfolios(.timed = TRUE)
+
+timed_portfolios |> 
+  readr::write_rds("Data/timed_portfolios.rds")
+
+timed_portfolios |> 
+  filter(portfolio %in% c("single", "hml", "1/N")) |> 
+  mutate(strategy = paste(strategy, portfolio, timing, sep = "_")) |> 
+  select(-c(portfolio, timing)) |> 
+  perf_stats(.ret = ret) |> 
+  view()
+
+portfolios <- readr::read_rds("Data/portfolios.rds")
+
+timed_portfolios |> 
+  filter(portfolio %in% c("single", "hml", "1/N")) |> 
+  rename(timed_ret = ret) |> 
+  left_join(
+    y  = portfolios,
+    by = join_by(date, strategy, portfolio)
+  ) |> 
   mutate(
-    cumvol   = slider::slide_dbl(.x = ret_l, .f = sd, .before = Inf, .complete = TRUE) |> dplyr::lag(),
-    mom1     = dplyr::lag(ret_l),
-    mom3     = slider::slide_dbl(.x = ret_l, .f = sum, .before = 2, .complete = TRUE) |> dplyr::lag(),
-    mom6     = slider::slide_dbl(.x = ret_l, .f = sum, .before = 5, .complete = TRUE) |> dplyr::lag(),
-    mom12    = slider::slide_dbl(.x = ret_l, .f = sum, .before = 10, .complete = TRUE) |> dplyr::lag()
-  )
+    strategy = paste(strategy, portfolio, timing, sep = "_")
+  ) |> 
+  select(-c(portfolio, timing)) |> 
+  nest(data = -strategy) |> 
+  mutate(
+    reg = map(
+      .x = data,
+      .f = ~lm(timed_ret ~ ret, data = .x)
+    ),
+    tidy = map(
+      .x = reg,
+      .f = broom::tidy
+    ) 
+  ) |> 
+  unnest(tidy) |> 
+  filter(term == "(Intercept)" & p.value <= 0.1)
 
 
 ##### Plots #####
@@ -240,6 +274,8 @@ df |>
               .y = N)
 
 ###### Untimed factors (isolated differentials) ###### 
+portfolios <- readr::read_rds("Data/portfolios.rds")
+
 #   Isolate only the factors, excluding the mid portfolios
 factors <- portfolios |> 
   filter(portfolio %in% c("single", "hml")) |> 
@@ -298,3 +334,6 @@ portfolios |>
       .path  = "Plots/by_strategy/"
     )
   )
+
+factors |> 
+  perf_stats()
