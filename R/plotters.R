@@ -47,7 +47,8 @@ simple_line <- function(.data,
                         .title = NULL,
                         .xlab  = NULL,
                         .ylab  = NULL,
-                        .col   = "red"){
+                        .col   = "red",
+                        .path  = NA){
   #   This function generates a simple line plotly with nice formatting.
   
   p <- .data |>
@@ -65,9 +66,27 @@ simple_line <- function(.data,
     ) + 
     ggplot2::theme_bw()      # Apply a black and white theme to the plot
   
-  p |>
-    plotly::ggplotly() |>    # Convert the ggplot object to an interactive Plotly plot
-    print()                  # Print the interactive plot
+  if (is.na(.path)){
+    
+    # Simply print the plot adding plotly to it
+    p |> 
+      plotly::ggplotly() |>  # Convert ggplot object to interactive Plotly object
+      print()  # Print the interactive plot
+    
+  } else {
+    
+    # Save the plot to a file
+    ggplot2::ggsave(
+      filename = paste0(.path, .title, ".png"),
+      plot     = p,
+      width    = 8,
+      height   = 5,
+      dpi      = 300,
+      bg       = "white"
+    ) 
+    
+  }
+
 }
 
 
@@ -78,7 +97,8 @@ multiple_lines <- function(.data,
                            .col,
                            .title = NULL,
                            .xlab  = NULL,
-                           .ylab  = NULL){
+                           .ylab  = NULL,
+                           .path  = NA){
   #   This function generates a line plotly with multiple lines/colors which are given in a column of the input.
   
   p <- .data |>
@@ -95,9 +115,26 @@ multiple_lines <- function(.data,
     ) + 
     ggplot2::theme_minimal()      # Apply a black and white theme to the plot
   
-  p |>
-    plotly::ggplotly() |>    # Convert the ggplot object to an interactive Plotly plot
-    print()                  # Print the interactive plot
+  if (is.na(.path)){
+    
+    # Simply print the plot adding plotly to it
+    p |> 
+      plotly::ggplotly() |>  # Convert ggplot object to interactive Plotly object
+      print()  # Print the interactive plot
+    
+  } else {
+    
+    # Save the plot to a file
+    ggplot2::ggsave(
+      filename = paste0(.path, .title, ".png"),
+      plot     = p,
+      width    = 8,
+      height   = 5,
+      dpi      = 300,
+      bg       = "white"
+    ) 
+    
+  }
   
 }
 
