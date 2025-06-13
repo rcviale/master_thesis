@@ -56,32 +56,10 @@ compute_signals <- function(.data){
 
 
 
-compute_dol_carry <- function(.data){
-  #   This function computes the returns for the Dollar (1/N of all currencies) strategy.
-  
-  .data |> 
-    dplyr::summarise(
-      dol_carry = ifelse(mean(avg_fd, na.rm = T) >= 0, mean(rl), mean(rs)), # I take the mean(avg_fd) to save a few 
-      # lines of code. Since avg_fd is the same in every date, it's also the same as it's mean.
-      .by       = date,
-    ) |> 
-    tidyr::pivot_longer(
-      -date,
-      names_to  = "strategy",
-      values_to = "ret_l"
-    ) |> 
-    dplyr::mutate(
-      portfolio = "single"
-    )
-  
-}
-
-
-
 cs_logret <- function(.x){
   #   This function computes the cross sectional return for a vector, and returns it in log return.
   
-  log( mean( exp(.x) - 1, na.rm = T ) + 1 )
+  log( mean( exp(.x), na.rm = T ) )
   
 }
 
@@ -96,20 +74,34 @@ cs_wlogret <- function(.x, .w){
 
 
 
+compute_dol_carry <- function(.data){
+  #   This function computes the returns for the Dollar (1/N of all currencies) strategy.
+  
+  .data |> 
+    dplyr::summarise(
+      ret_l = ifelse(mean(avg_fd, na.rm = T) >= 0, cs_logret(rl), cs_logret(rs)), # I take the mean(avg_fd) to 
+      # save a few lines of code. Since avg_fd is the same in every date, it's also the same as it's mean.
+      .by       = date,
+    ) |> 
+    dplyr::mutate(
+      strategy = "dol_carry",
+      portfolio = "single"
+    )
+  
+}
+
+
+
 compute_dol <- function(.data){
   #   This function computes returns for the Dollar Carry strategy. 
   
   .data |> 
     dplyr::summarise(
-      dol = mean(rl),
+      ret_l = cs_logret(rl),
       .by = date
     ) |> 
-    tidyr::pivot_longer(
-      -date,
-      names_to  = "strategy",
-      values_to = "ret_l"
-    ) |> 
     dplyr::mutate(
+      strategy = "dol",
       portfolio = "single"
     )
   
@@ -297,7 +289,7 @@ compute_naive <- function(.data,
     ) |> 
     dplyr::mutate(
       strategy  = "naive",
-      portfolio = "1/N"
+      portfolio = "1/K"
     )
   
   .data |> 
@@ -399,11 +391,12 @@ timed_variance <- function(.data){
 
 
 perf_stats <- function(.data,
-                       .ret = ret){
-  #   This function computes performance statistics. Input should be in log returns.
+                       .ret = ret,
+                       ...){
+  #   This function computes performance statistics. Input should be in log returns. Output is in simple returns.
   
   .data |> 
-    group_by(strategy) |> 
+    group_by(...) |> 
     summarise(
       ann_ret = (exp(mean( {{ .ret }} ) * 12) - 1) * 100,
       ann_vol = sd(exp( {{ .ret }} ) - 1) * sqrt(12) * 100,
@@ -417,3 +410,43 @@ perf_stats <- function(.data,
     dplyr::arrange(dplyr::desc(sharpe))
   
 }
+
+
+
+compare_stats <- function(.factors, .timed, .stat, .ret = ret){
+  
+  untimed_stats <- .factors |> 
+    perf_stats(
+      .ret = {{ .ret }},
+      strategy
+    ) |> 
+    select(strategy, {{ .stat }})
+  
+  timed_stats <- .timed |> 
+    perf_stats(
+      .ret = {{ .ret }},
+      strategy, timing
+    ) |> 
+    select(strategy, timing, {{ .stat }})
+  
+  timed_stats |> 
+    pivot_wider(
+      names_from  = timing,
+      values_from = {{ .stat }}
+    ) |> 
+    left_join(
+      y  = untimed_stats,
+      by = join_by(strategy)
+    ) |> 
+    select(strategy, {{ .stat }}, mom_1_12, mom_1_36, mom_1_60, mom_3_12, mom_3_36, mom_3_60, mom_6_12, mom_6_36, mom_6_60,
+           mom_12_12, mom_12_36, mom_12_60) |> 
+    mutate(
+      across(
+        .cols = -c(strategy, {{ .stat }}),
+        .fns  = ~ .x - {{ .stat }}
+      )
+    ) |> 
+    arrange(desc({{ .stat }}))
+  
+}
+
