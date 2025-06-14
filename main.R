@@ -197,6 +197,13 @@ timed_portfolios |>
   readr::write_rds("Data/timed_portfolios.rds")
 
 ##### Timed Factors Comparison #####
+#   Load necessary packages and scripts
+c(
+  "R/startup.R",
+  "R/helpers.R"
+) |> 
+  purrr::walk(.f = source)
+
 factors <- readr::read_rds("Data/portfolios.rds") |> 
   filter(portfolio %in% c("single", "hml", "1/K")) |> 
   select(-portfolio)
@@ -205,39 +212,22 @@ timed_factors <- readr::read_rds("Data/timed_portfolios.rds") |>
   filter(portfolio %in% c("single", "hml", "1/K")) |> 
   select(-portfolio) 
 
-compare_stats(factors, timed_factors, ann_ret)
+compare_stats(factors, timed_factors, ann_ret) |> 
+  comparison_heatmap(.x = ann_ret,
+                     .path = "Plots/comparison/")
 
-compare_stats(factors, timed_factors, ann_vol)
+compare_stats(factors, timed_factors, ann_vol) |> 
+  comparison_heatmap(.x = ann_vol,
+                     .inverted = TRUE,
+                     .mid = 0,
+                     .path = "Plots/comparison/")
 
-compare_stats(factors, timed_factors, sharpe)
+compare_stats(factors, timed_factors, sharpe) |> 
+  comparison_heatmap(.x = sharpe,
+                     .path = "Plots/comparison/")
 
-
-timed_portfolios |> 
-  # filter(portfolio %in% c("single", "hml", "1/N")) |> 
-  filter(portfolio %in% c("long")) |> 
-  rename(timed_ret = ret) |> 
-  left_join(
-    y  = portfolios,
-    by = join_by(date, strategy, portfolio)
-  ) |> 
-  mutate(
-    strategy = paste(strategy, portfolio, timing, sep = "_")
-  ) |> 
-  select(-c(portfolio, timing)) |> 
-  nest(data = -strategy) |> 
-  mutate(
-    reg = map(
-      .x = data,
-      .f = ~lm(timed_ret ~ ret, data = .x)
-    ),
-    tidy = map(
-      .x = reg,
-      .f = broom::tidy
-    ) 
-  ) |> 
-  unnest(tidy) |> 
-  filter(term == "(Intercept)" & p.value <= 0.01)
-
+compute_alphas(factors, timed_factors) |> 
+  alphas_table()
 
 ##### Plots and Tables #####
 #   Load necessary packages and scripts
