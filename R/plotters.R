@@ -23,7 +23,7 @@ group_line_plot <- function(.data,
       print()  # Print the interactive plot
     
   } else {
-
+    
     # Save the plot to a file
     ggplot2::ggsave(
       filename = paste0(.path, .title, ".png"),
@@ -86,7 +86,7 @@ simple_line <- function(.data,
     ) 
     
   }
-
+  
 }
 
 
@@ -138,3 +138,104 @@ multiple_lines <- function(.data,
   
 }
 
+
+
+comparison_heatmap <- function(.data,
+                               .x,
+                               .title = NULL,
+                               .inverted = FALSE,
+                               .mid = NA,
+                               .path = NA){
+  
+  if (.inverted == FALSE) {
+    
+    palette <- c("red", "white", "blue")
+    
+  } else {
+    
+    palette <- c("blue", "white", "red")
+    
+  }
+  
+  .data <- .data |> 
+    pivot_longer(
+      -c(strategy, {{ .x }}),
+      names_to  = "timing",
+      values_to = "dif"
+    )
+  
+  # Desired order of x-axis
+  timing_order <- c("mom_1_12", "mom_1_36", "mom_1_60",
+                    "mom_3_12", "mom_3_36", "mom_3_60",
+                    "mom_6_12", "mom_6_36", "mom_6_60",
+                    "mom_12_12", "mom_12_36", "mom_12_60", "var")
+  
+  # Desired order of y-axis
+  strategy_order <- c(
+    "dol", "dol_carry",
+    "cs_carry", "ts_carry",
+    "cs_mom1", "cs_mom3", "cs_mom6", "cs_mom12",
+    "ts_mom1", "ts_mom3", "ts_mom6", "ts_mom12",
+    "naive"  # optional, add any others you have
+  )
+  
+  .data <- .data |> 
+    mutate(timing   = factor(timing, levels = timing_order),
+           strategy = factor(strategy, levels = strategy_order))
+  
+  if (is.na(.mid)){
+    
+    .mid <- .data |> 
+      dplyr::pull(dif) |> 
+      mean()
+    
+  } else {
+    
+    .mid <- 0
+    
+  }
+  
+  p <- .data |> 
+    ggplot(aes(
+      x = timing,
+      y = strategy,
+      fill = dif)) +
+    geom_tile() +
+    geom_text(aes(label = round(dif, 2)), size = 3) +
+    scale_fill_gradient2(
+      low = palette[1], 
+      mid = palette[2], 
+      high = palette[3], 
+      midpoint = .mid
+    ) +
+    ggplot2::labs(
+      title = ifelse(is.null(.title), 
+                     paste0("Heatmap of ", rlang::enexpr(.x), " differences vs. untimed counterpart"), 
+                     .title),
+    ) + 
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  
+  if (is.na(.path)){
+    
+    # Simply print the plot
+    p |> 
+      print()
+    
+  } else {
+    
+    filename <- ifelse(is.null(.title), rlang::enexpr(.x), .title)
+    
+    # Save the plot to a file
+    ggplot2::ggsave(
+      filename = paste0(.path, "comparison_", filename, ".png"),
+      plot     = p,
+      width    = 8,
+      height   = 5,
+      dpi      = 300,
+      bg       = "white"
+    ) 
+    
+  }
+  
+}
