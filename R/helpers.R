@@ -439,7 +439,7 @@ compare_stats <- function(.factors, .timed, .stat, .ret = ret){
       by = join_by(strategy)
     ) |> 
     select(strategy, {{ .stat }}, mom_1_12, mom_1_36, mom_1_60, mom_3_12, mom_3_36, mom_3_60, mom_6_12, mom_6_36, mom_6_60,
-           mom_12_12, mom_12_36, mom_12_60) |> 
+           mom_12_12, mom_12_36, mom_12_60, var) |> 
     mutate(
       across(
         .cols = -c(strategy, {{ .stat }}),
@@ -450,3 +450,45 @@ compare_stats <- function(.factors, .timed, .stat, .ret = ret){
   
 }
 
+
+
+compute_alphas <- function(.factors, .timed){
+  
+  .timed |> 
+    rename(timed_ret = ret) |> 
+    left_join(
+      y  = .factors,
+      by = join_by(date, strategy)
+    ) |> 
+    mutate(
+      strategy = paste(strategy, timing, sep = "."),
+      # across(
+      #   .cols = timed_ret:ret,
+      #   .fns  = ~(exp(.x) - 1) * 100
+      # )
+    ) |> 
+    select(-timing) |> 
+    nest(data = -strategy) |> 
+    mutate(
+      reg = map(
+        .x = data,
+        .f = ~lm(timed_ret ~ ret, data = .x)
+      ),
+      tidy = map(
+        .x = reg,
+        .f = broom::tidy
+      ) 
+    ) |> 
+    unnest(tidy) |> 
+    filter(term == "(Intercept)") |> 
+    select(strategy, estimate, p.value) |> 
+    mutate(
+      estimate = (exp(12 * estimate) - 1) * 100
+    ) |> 
+    separate(
+      col  = strategy,
+      into = c("strategy", "timing"),
+      sep  = "\\."
+    )
+  
+}
