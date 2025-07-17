@@ -64,7 +64,7 @@ simple_line <- function(.data,
       x     = ifelse(is.null(.xlab), paste0(rlang::enexpr(.x)), .xlab),
       y     = ifelse(is.null(.ylab), paste0(rlang::enexpr(.y)), .ylab)
     ) + 
-    ggplot2::theme_bw()      # Apply a black and white theme to the plot
+    ggplot2::theme_minimal()      # Apply a black and white theme to the plot
   
   if (is.na(.path)){
     
@@ -168,7 +168,8 @@ comparison_heatmap <- function(.data,
   timing_order <- c("mom_1_12", "mom_1_36", "mom_1_60",
                     "mom_3_12", "mom_3_36", "mom_3_60",
                     "mom_6_12", "mom_6_36", "mom_6_60",
-                    "mom_12_12", "mom_12_36", "mom_12_60", "var")
+                    "mom_12_12", "mom_12_36", "mom_12_60", 
+                    "rvar", "rvol")
   
   # Desired order of y-axis
   strategy_order <- c(

@@ -4,7 +4,8 @@ alphas_table <- function(.data){
   timing_order <- c("mom_1_12", "mom_1_36", "mom_1_60",
                     "mom_3_12", "mom_3_36", "mom_3_60",
                     "mom_6_12", "mom_6_36", "mom_6_60",
-                    "mom_12_12", "mom_12_36", "mom_12_60", "var")
+                    "mom_12_12", "mom_12_36", "mom_12_60", 
+                    "rvar", "rvol")
   
   strategy_order <- c(
     "naive",
