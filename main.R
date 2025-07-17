@@ -122,11 +122,13 @@ df <- read_rds("Data/all_outright.rds") |>
   # rm_t = the midpoint return I got in the current month t (non look ahead)
   # fwd_disc_t = the carry I observe in month t and expect to get in month t+1
   # => fwd_disc is the expectation, rl is what realized
-  compute_signals()
+  compute_signals() |> 
+  #   N <= 3 (i.e. insufficient) until 1990-05-31. Thus, we start from 1990-05-30
+  filter(date >= "1990-05-31")
 
-#   N <= 3 (i.e. insufficient) until 1990-05-31. Thus, we start from 1990-05-30
-df <- df |> 
-  filter(date >= "1990-05-30")
+read_rds("Data/all_outright.rds") |>
+  compute_mid_return() |>
+  readr::write_rds("Data/midspots.rds")
 
 #   Compute Dollar Carry strategy
 portfolios <- df |> 
@@ -166,8 +168,7 @@ portfolios <- df |>
   multiple_hml() |>  # Default is 5 portfolios
   rename_edge_portfolios() |> 
   bind_rows(portfolios) |> 
-  switch_shorts() |> 
-  compute_naive() |> 
+  compute_naive() |>
   organize_portfolios()
 
 #   Save all portfolios
@@ -184,29 +185,36 @@ c(
 ) |> 
   purrr::walk(.f = source)
 
-#   Load data
+a <- Sys.time()
+#   Timed momentum
 timed_portfolios <- readr::read_rds("Data/portfolios.rds") |>
   timed_momentum()
 
-timed_portfolios <-  readr::read_rds("Data/portfolios.rds") |>
-  timed_variance() |> 
+timed_portfolios <- readr::read_rds("Data/portfolios.rds") |>
+  timed_variance(
+    .midspots = readr::read_rds("Data/midspots.rds") |> 
+                   filter(date >= "1990-01-01")) |> 
   bind_rows(timed_portfolios) |> 
   organize_portfolios(.timed = TRUE)
 
 timed_portfolios |> 
   readr::write_rds("Data/timed_portfolios.rds")
 
+rm(list = ls())
+
 ##### Timed Factors Comparison #####
 #   Load necessary packages and scripts
 c(
   "R/startup.R",
-  "R/helpers.R"
+  "R/helpers.R",
+  "R/plotters.R",
+  "R/tables.R"
 ) |> 
   purrr::walk(.f = source)
 
 factors <- readr::read_rds("Data/portfolios.rds") |> 
   filter(portfolio %in% c("single", "hml", "1/K")) |> 
-  select(-portfolio)
+  select(date, strategy, ret = ret_l)
 
 timed_factors <- readr::read_rds("Data/timed_portfolios.rds") |> 
   filter(portfolio %in% c("single", "hml", "1/K")) |> 
@@ -224,6 +232,7 @@ compare_stats(factors, timed_factors, ann_vol) |>
 
 compare_stats(factors, timed_factors, sharpe) |> 
   comparison_heatmap(.x = sharpe,
+                     .mid = 0,
                      .path = "Plots/comparison/")
 
 compute_alphas(factors, timed_factors) |> 

@@ -56,6 +56,26 @@ compute_signals <- function(.data){
 
 
 
+compute_mid_return <- function(.data){
+  
+  .data |> 
+    dplyr::filter(mkt == "spot") |> 
+    dplyr::select(-c(mkt, side)) |> 
+    dplyr::summarise(
+      mid_px  = mean(px, na.rm = TRUE),
+      .by     = c(date, from)
+    ) |> 
+    dplyr::group_by(from) |> 
+    dplyr::mutate(
+      rm = (mid_px / dplyr::lag(mid_px) - 1)
+    ) |> 
+    dplyr::ungroup() |>
+    dplyr::select(-mid_px) |> 
+    dplyr::drop_na(rm)
+  
+}
+
+
 cs_logret <- function(.x){
   #   This function computes the cross sectional return for a vector, and returns it in log return.
   
@@ -68,20 +88,31 @@ cs_logret <- function(.x){
 cs_wlogret <- function(.x, .w){
   #   This function computes the cross sectional return for a vector, and returns it in log return.
   
-  log( sum(.w * ( exp(.x) - 1 ), na.rm = T ) + 1 )
+  log( sum(.w * ( expm1(.x) ), na.rm = T ) + 1 )
+  
+}
+
+
+
+cs_wlogrv <- function(.x, .w){
+  #   This function computes the cross sectional realized variance for a vector. Does NOT convert it back to log.
+  
+  sum(.w * ( expm1(.x) ), na.rm = T )^2
   
 }
 
 
 
 compute_dol_carry <- function(.data){
-  #   This function computes the returns for the Dollar (1/N of all currencies) strategy.
+  #   This function computes the returns for the Dollar Carry strategy.
   
   .data |> 
     dplyr::summarise(
       ret_l = ifelse(mean(avg_fd, na.rm = T) >= 0, cs_logret(rl), cs_logret(rs)), # I take the mean(avg_fd) to 
       # save a few lines of code. Since avg_fd is the same in every date, it's also the same as it's mean.
-      .by       = date,
+      ret_s = ifelse(mean(avg_fd, na.rm = T) >= 0, cs_logret(rs), cs_logret(rs)),
+      curs  = list(list(hi = from, lo = from)),
+      .by   = date,
     ) |> 
     dplyr::mutate(
       strategy = "dol_carry",
@@ -93,11 +124,13 @@ compute_dol_carry <- function(.data){
 
 
 compute_dol <- function(.data){
-  #   This function computes returns for the Dollar Carry strategy. 
+  #   This function computes returns for the Dollar strategy. 
   
   .data |> 
     dplyr::summarise(
       ret_l = cs_logret(rl),
+      ret_s = cs_logret(rs),
+      curs  = list(list(hi = from, lo = from)),
       .by = date
     ) |> 
     dplyr::mutate(
@@ -115,38 +148,77 @@ compute_ts_factors <- function(.data){
   .data <- .data |> 
     dplyr::group_by(date, signal) |> 
     dplyr::summarise(
-      ret_l = if_else( rlang::is_empty( rl[var > 0] ), 
-                       0, 
-                       cs_logret( rl[var > 0]) ),
-      ret_s = if_else( rlang::is_empty( rs[var < 0] ), 
-                       0, 
-                       cs_logret(rs[var < 0]) ),
+      ret_l_pos = if_else( rlang::is_empty( rl[var > 0] ), 
+                           0, 
+                           cs_logret( rl[var > 0]) ),
+      ret_s_neg = if_else( rlang::is_empty( rs[var < 0] ), 
+                           0, 
+                           cs_logret( rs[var < 0]) ),
+      ret_l_neg = if_else( rlang::is_empty( rl[var < 0] ), 
+                           0, 
+                           cs_logret( rl[var < 0]) ),
+      ret_s_pos = if_else( rlang::is_empty( rs[var > 0] ), 
+                           0, 
+                           cs_logret( rs[var > 0]) ),
+      pos_curs  = list(curs = from[ var > 0 ]),
+      neg_curs  = list(curs = from[ var < 0 ]),
       .groups = "drop"
     ) |> 
     dplyr::mutate(
-      hml = ret_l + ret_s,
+      hml = ret_l_pos + ret_s_neg,
+      lmh = ret_l_neg + ret_s_pos,
       strategy = paste0("ts_", signal)
     ) |> 
     dplyr::select(-signal)
   
-  .hml <- .data |> 
-    dplyr::select(date, strategy, ret_l = hml) |>
-    dplyr::mutate(
-      portfolio = "hml"
-    )
-  
-  .long <- .data|> 
-    dplyr::select(date, strategy, ret_l) |> 
-    dplyr::mutate(
+  #   Long basket returns: we can long or short this basket in the future. This basket is for currencies with 
+  # positive var
+  long <- .data |> 
+    dplyr::select(
+      date, 
+      strategy, 
+      ret_l = ret_l_pos, 
+      ret_s = ret_s_pos, 
+      curs  = pos_curs
+    ) |> 
+    group_by(date, strategy) |> 
+    mutate(
+      curs      = list(list(hi = as.vector(unlist(curs)), lo = as.vector(unlist(curs)))),
       portfolio = "long"
     )
   
-  .data |> 
-    dplyr::select(date, strategy, ret_s) |> 
-    dplyr::mutate(
+  short <- .data |> 
+    dplyr::select(
+      date, 
+      strategy, 
+      ret_l = ret_l_neg, 
+      ret_s = ret_s_neg, 
+      curs  = neg_curs
+    ) |> 
+    group_by(date, strategy) |> 
+    mutate(
+      curs      = list(list(hi = as.vector(unlist(curs)), lo = as.vector(unlist(curs)))),
       portfolio = "short"
+    )
+  
+  .data |> 
+    dplyr::select(
+      date, 
+      strategy, 
+      ret_l   = hml,
+      ret_s   = lmh,
+      curs_hi = pos_curs, # In HML = ret_l I am longing curs_hi currencies and shorting curs_lo ones
+      curs_lo = neg_curs  # In LMH = ret_s I am longing curs_lo currencies and shorting curs_hi ones
     ) |>
-    dplyr::bind_rows(.hml, .long) 
+    dplyr::mutate(
+      curs = map2(.x = curs_hi, 
+                  .y = curs_lo, 
+                  .f = ~list(hi = .x, lo = .y)),
+      portfolio = "hml"
+    ) |> 
+    dplyr::select(-c(curs_hi, curs_lo)) |> 
+    dplyr::bind_rows(long, short) |> 
+    dplyr::arrange(date, strategy, portfolio)
   
 }
 
@@ -204,8 +276,7 @@ multiple_portfolio_sorts <- function(.data,
     dplyr::summarize(
       ret_l = cs_logret(rl),
       ret_s = cs_logret(rs),
-      # ret_l = cs_xs_simple(rl),
-      # ret_s = cs_xs_simple(rs),
+      curs  = list(list(hi = from, lo = from)),
       .groups = "drop"
     ) |> 
     dplyr::arrange(date, signal, portfolio) |> 
@@ -227,24 +298,29 @@ multiple_hml <- function(.data,
   
   longs <- .data |> 
     dplyr::filter(portfolio == high_id) |>  # Filter for the highest portfolio (long leg)
-    dplyr::select(-c(portfolio, ret_s)) |> 
-    dplyr::rename(long = ret_l)
+    dplyr::select(-portfolio) |> 
+    dplyr::rename(ret_l_p5 = ret_l, ret_s_p5 = ret_s, curs_p5 = curs)
   
-  .data |> 
+  .data |>
     dplyr::filter(portfolio == "p1") |>  # Filter for the lowest portfolio (short leg)
-    dplyr::select(-c(ret_l, portfolio)) |>  # Remove long return column
-    dplyr::rename(short = ret_s) |>  # Rename the p1 column to short_p1
+    dplyr::select(-portfolio) |>  # Remove long return column
+    dplyr::rename(ret_l_p1 = ret_l, ret_s_p1 = ret_s, curs_p1 = curs) |>
     dplyr::inner_join(  # Join with long returns by date and strategy
-      longs, 
+      longs,
       dplyr::join_by(date, strategy)
-    ) |> 
+    ) |>
+    dplyr::group_by(date, strategy) |>
     dplyr::mutate(
-      ret_l     = long + short,  # Compute HML return
+      ret_l     = ret_l_p5 + ret_s_p1,  # Compute HML return
+      ret_s     = ret_l_p1 + ret_s_p5,  # Set short return to NA (not applicable)
+      curs      = purrr::map2(.x = curs_p5,
+                              .y = curs_p1,
+                              .f = ~list(hi = as.vector(unlist(.x$hi)), lo = as.vector(unlist(.y$hi)))),
       portfolio = as.factor("hml"),  # Label the portfolio as "hml"
-      ret_s     = NA  # Set short return to NA (not applicable)
-    ) |> 
-    dplyr::select(-c(short, long)) |>  # Drop intermediate columns
-    dplyr::bind_rows(.data) |>  # Append original data to include all portfolios
+    ) |>
+    dplyr::ungroup() |> 
+    dplyr::select(date, strategy, portfolio, ret_l, ret_s, curs) |> 
+    dplyr::bind_rows(.data) |> 
     dplyr::arrange(date, strategy, portfolio)  # Sort by date, strategy, and portfolio
   
 }
@@ -267,25 +343,36 @@ rename_edge_portfolios <- function(.data){
 
 
 
-switch_shorts <- function(.data){
-  
-  .data |> 
-    dplyr::mutate(ret = if_else(portfolio == "short", ret_s, ret_l)) |> 
-    dplyr::select(-c(ret_l, ret_s))
-  
-}
-
-
-
 compute_naive <- function(.data,
                           .portfolios = c("hml", "single")){
   
   naives <- .data |> 
     dplyr::filter(portfolio %in% c("hml", "single")) |> 
-    dplyr::select(-portfolio) |> 
     dplyr::group_by(date) |> 
     dplyr::summarise(
-      ret = mean(ret, na.rm = TRUE)
+      ret_l = cs_logret(ret_l),
+      ret_s = cs_logret(ret_s),
+      curs  = list(
+        list(
+          hi = as.vector(unlist(purrr::map(.x = curs, .f = "hi"))),
+          lo = as.vector(unlist(purrr::map(.x = curs, .f = "lo")))  
+        )
+      ),
+      .groups = "drop"
+    ) |> 
+    dplyr::mutate(
+      curs = map(curs, \(x) {       # work row-wise on the list column
+        all_cur <- union(x$hi, x$lo)  # every currency that occurs at this date
+        
+        # balance = (#times in hi) − (#times in lo)
+        bal <- sapply(all_cur,
+                      function(c) sum(x$hi == c) - sum(x$lo == c))
+        
+        list(                         # wrap in *one* list so `curs3` is list-column
+          hi = rep(all_cur[bal > 0],  bal[bal > 0]),   # positive balance → long side
+          lo = rep(all_cur[bal < 0], -bal[bal < 0])    # negative balance → short side
+        )
+      })
     ) |> 
     dplyr::mutate(
       strategy  = "naive",
@@ -313,7 +400,7 @@ organize_portfolios <- function(.data,
     
     .data |> 
       dplyr::arrange(date, strategy, portfolio) |> 
-      dplyr::select(date, strategy, portfolio, ret)
+      dplyr::select(date, strategy, portfolio, ret_l, ret_s, curs)
     
   }
   
@@ -323,68 +410,136 @@ organize_portfolios <- function(.data,
 
 timed_momentum <- function(.data,
                            .mom_windows = c(1, 3, 6, 12),
-                           .vol_windows = c(12, 36, 60)){
+                           .vol_windows = c(12, 36, 60)) {
   
   .data |>
-    mutate(vol_window = list(.vol_windows)) |> 
-    unnest(vol_window) |> 
-    group_by(strategy, portfolio, vol_window) |>
-    mutate(
-      vol = sqrt(12) * (
-        slider::slide_dbl(
-          .x = ret,
-          .f = sd,
-          .before = unique(vol_window) - 1,
-          .complete = TRUE
-        ) |> dplyr::lag()
-      )
-    ) |> 
-    ungroup() |> 
-    mutate(mom_window = list(.mom_windows)) |>
-    unnest(mom_window) |> 
-    group_by(strategy, portfolio, vol_window, mom_window) |>
-    mutate(
-      mom       = (12 / mom_window) * (
-        slider::slide_dbl(
-          .x        = ret,
-          .f        = sum,
-          .before   = unique(mom_window) - 1,
-          .complete = TRUE
-        ) |> dplyr::lag()
-      ),
-      timing    = paste("mom", mom_window, vol_window, sep = "_"),
+    dplyr::mutate(vol_window = list(.vol_windows)) |>
+    tidyr::unnest(vol_window) |>
+    dplyr::group_by(strategy, portfolio, vol_window) |>
+    dplyr::mutate(
+      vol = sqrt(12) * slider::slide_dbl(
+        .x        = expm1(ret_l),
+        .f        = ~ stats::sd(.x, na.rm = TRUE),
+        .before   = vol_window[1] - 1,
+        .complete = TRUE
+      ) |> dplyr::lag()
     ) |>
-    drop_na(mom, vol) |> 
-    group_by(date, strategy, portfolio, timing) |> 
-    mutate(
-      w_mom     = max(-2, min(2, mom / vol)),
-      ret       = cs_wlogret(ret, w_mom)
-    ) |> 
-    ungroup() |> 
-    select(-c(vol_window, mom_window, mom, vol, w_mom))
+    dplyr::ungroup() |>
+    dplyr::mutate(mom_window = list(.mom_windows)) |>
+    tidyr::unnest(mom_window) |>
+    dplyr::arrange(date) |>
+    dplyr::group_by(strategy, portfolio, vol_window, mom_window) |>
+    dplyr::mutate(
+      mom = (12 / mom_window) * slider::slide_dbl(
+        .x        = expm1(ret_l), 
+        .f        = ~ sum(.x, na.rm = TRUE),
+        .before   = mom_window[1] - 1,
+        .complete = TRUE
+      ) |> dplyr::lag(),
+      timing = paste0("mom_", mom_window, "_", vol_window)
+    ) |>
+    tidyr::drop_na(mom, vol) |>
+    dplyr::group_by(strategy, portfolio, timing) |>
+    dplyr::mutate(weight = pmax(-2, pmin(2, mom / vol))) |>
+    dplyr::ungroup() |> 
+    dplyr::summarise(
+      ret = cs_wlogret(
+        ifelse(weight >= 0, ret_l, ret_s),
+        abs(weight)
+      ),
+      .by = c(date, strategy, portfolio, timing)
+    )
   
 }
 
 
 
-timed_variance <- function(.data){
+compute_rv <- function(.data) {
   
   .data |>
-    group_by(strategy, portfolio) |> 
-    mutate(
-      rvar   = dplyr::lag(ret)^2, 
-      cumvar = slider::slide_dbl(.x = rvar, .f = ~mean(.x, na.rm = TRUE), .before = Inf, .complete = TRUE
-      )
+    summarise(
+      ret = mean(rm, na.rm = TRUE), # 1/N return per day and side
+      .by  = c(day, side)
     ) |> 
-    group_by(date, strategy, portfolio) |> 
+    summarise(
+      ret_day = sum(ret), # Add long and short (in case there is a short side, otherwise it will be the same)
+      .by = day
+    ) |>   
+    summarise(
+      rv = sum(ret_day^2, na.rm = TRUE) # Sum of squared returns = realized variance
+    ) |>
+    slice_tail(n = 22) |>  # Sometimes the dates for all currencies won't match, which would make RV be computed 
+    # over more than 22 days. Thus, I take the only the last 22 observations, which will ignore currencies for 
+    # which data was missing.
+    pull(rv)
+  
+}
+
+
+
+timed_variance <- function(.data, .midspots){
+  
+  midrets <- .midspots |> 
+    group_by(from) |> 
     mutate(
-      w_var  = min(2, rvar / cumvar),
-      ret    = cs_wlogret(ret, w_var),
-      timing = "var"
-    ) |> 
-    drop_na(w_var) |> 
+      month  = lubridate::ceiling_date(date, "month") - 1,  
+      window = slide(.x      = date, 
+                     .f      = identity, 
+                     .before = 21,
+                     .complete = TRUE),
+    ) |>
     ungroup() |> 
-    select(-c(rvar, cumvar, w_var))
+    drop_na(window) |>
+    filter(date == month) |> 
+    select(month, from, date = window) |> 
+    unnest(date) |> 
+    left_join(
+      .midspots, 
+      join_by(date, from)
+    ) |> 
+    select(date = month, day = date, from, rm) |> 
+    nest(midrets = -c(date, from))
+  
+  .data |>
+    unnest_longer(
+      curs, 
+      indices_to = "side", 
+      values_to = "from"
+    ) |> 
+    unnest(from) |> 
+    filter(
+      side != "lo" | portfolio %in% c("hml", "1/K") # Filter out the lo in portfolios where it is equal to hi
+    ) |>
+    left_join(
+      y  = midrets,
+      by = dplyr::join_by(date, from),
+      relationship = "many-to-one"
+    ) |> 
+    unnest(midrets) |> 
+    nest(data = c(day, from, side, rm)) |> 
+    mutate(
+      rvar = map_dbl(.x = data,
+                     .f = compute_rv),
+      rvol = sqrt(rvar)
+    ) |> 
+    pivot_longer(
+      rvar:rvol,
+      names_to  = "timing",
+      values_to = "value"
+    ) |> 
+    group_by(strategy, portfolio, timing) |> 
+    mutate(
+      weight = pmin(2, 
+                    value / slider::slide_dbl(.x        = value, 
+                                              .f        = ~mean(.x, na.rm = TRUE), 
+                                              .before   = Inf, 
+                                              .complete = TRUE)),
+    ) |> 
+    ungroup() |> 
+    summarise(
+      ret = cs_wlogret(ret_l, weight), # Since rvar is strictly nonnegative, it never takes short positions.,
+      .by = c(date, strategy, portfolio, timing)
+    ) 
   
 }
 
@@ -439,7 +594,7 @@ compare_stats <- function(.factors, .timed, .stat, .ret = ret){
       by = join_by(strategy)
     ) |> 
     select(strategy, {{ .stat }}, mom_1_12, mom_1_36, mom_1_60, mom_3_12, mom_3_36, mom_3_60, mom_6_12, mom_6_36, mom_6_60,
-           mom_12_12, mom_12_36, mom_12_60, var) |> 
+           mom_12_12, mom_12_36, mom_12_60, rvar, rvol) |> 
     mutate(
       across(
         .cols = -c(strategy, {{ .stat }}),
