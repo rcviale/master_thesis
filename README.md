@@ -11,4 +11,6 @@ This repository contains the codes for my Master thesis in Quantitative Finance 
 - **TS-Momentum**: long (short) all currencies with positive (negative) past performance.
 
 ## Timing Signals
-- **Momentum**: weights given by the annualized past $m$ months return scaled by the annualized past return volatilty over $v$ months, capped at $\pm 2$, where $m \in {1, 3, 6, 12} \text{ and } v \in {12, 36, 60}$.
+- **Momentum**: weights given by the annualized past $m$ months return scaled by the annualized past return volatilty over $v$ months, capped at $\pm 2$, where $m \in \{1, 3, 6, 12\} \text{ and } v \in \{12, 36, 60\}$.
+  \begin{equation}
+    w_{i,t} = \tilde r
