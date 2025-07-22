@@ -17,13 +17,9 @@ $$
 w_{i,t} = \frac{ \tilde r_{i,t}^{(m)} }{ \tilde \sigma_{i,t}^{(v)}}
 $$
 
-- **Realized Variance (Volatility)**: weights given by the inverse of the variance (volatility) of daily returns in month $t$, $RV_{i,t}$, scaled by the average of all monthly variances (volatility) of daily returns until $t$, \bar {RV_{i,t}}, i.e.:
+- **Realized Variance (Volatility)**: weights given by the inverse of the variance (volatility) of daily returns in month $t$, $RV_{i,t}$, scaled by the average of all monthly variances (volatility) of daily returns until $t$, $\overline{RV}\_{i,t}$, i.e.:
 
 $$
-w_{i,t} = \frac{ \bar{RV_{i,t}} }{ RV_{i,t} }
-$$
-
-$$
-w_{i,t} = \frac{ \overline{RV_{i,t}} }{ RV_{i,t} }
+w_{i,t} = \frac{ \overline{RV}\_{i,t} }{ RV_{i,t} }
 $$
 
