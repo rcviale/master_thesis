@@ -22,3 +22,8 @@ $$
 $$
 w_{i,t} = \frac{ \bar{RV_{i,t}} }{ RV_{i,t} }
 $$
+
+$$
+w_{i,t} = \frac{ \overline{RV_{i,t}} }{ RV_{i,t} }
+$$
+
