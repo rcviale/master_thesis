@@ -465,12 +465,12 @@ compute_rv <- function(.data) {
       ret_day = sum(ret), # Add long and short (in case there is a short side, otherwise it will be the same)
       .by = day
     ) |>   
-    summarise(
-      rv = sum(ret_day^2, na.rm = TRUE) # Sum of squared returns = realized variance
-    ) |>
     slice_tail(n = 22) |>  # Sometimes the dates for all currencies won't match, which would make RV be computed 
     # over more than 22 days. Thus, I take the only the last 22 observations, which will ignore currencies for 
     # which data was missing.
+    summarise(
+      rv = sum( (ret_day - mean(ret_day, na.rm = T))^2, na.rm = T)
+    ) |>
     pull(rv)
   
 }
@@ -529,10 +529,14 @@ timed_variance <- function(.data, .midspots){
     ) |> 
     group_by(strategy, portfolio, timing) |> 
     mutate(
-      weight = pmin(2, 
-                    value / slider::slide_dbl(.x        = value, 
-                                              .f        = ~mean(.x, na.rm = TRUE), 
-                                              .before   = Inf, 
+      # weight =  slider::slide_dbl(.x        = value, 
+      #                             .f        = ~mean(.x, na.rm = TRUE), 
+      #                             .before   = Inf, 
+      #                             .complete = TRUE) / value,
+      weight = pmin(2,
+                    value / slider::slide_dbl(.x        = value,
+                                              .f        = ~mean(.x, na.rm = TRUE),
+                                              .before   = Inf,
                                               .complete = TRUE)),
     ) |> 
     ungroup() |> 
@@ -541,6 +545,29 @@ timed_variance <- function(.data, .midspots){
       .by = c(date, strategy, portfolio, timing)
     ) 
   
+}
+
+
+
+rename_strategies <- function(.data){
+  
+  # Original labels
+  strategies <- c("cs_carry", "dol", "dol_carry", "naive", "ts_carry", 
+                  "cs_mom1", "ts_mom1", "cs_mom3", "ts_mom3", 
+                  "cs_mom6", "ts_mom6", "cs_mom12", "ts_mom12")
+  
+  # Nicer labels
+  strategy_labels <- c("CS-Carry", "Dollar", "Dollar Carry", "Naive Multifactor", "TS-Carry",
+                       "CS-Momentum-1m", "TS-Momentum-1m", "CS-Momentum-3m", "TS-Momentum-3m",
+                       "CS-Momentum-6m", "TS-Momentum-6m", "CS-Momentum-12m", "TS-Momentum-12m")
+  
+  # Named vector for recoding
+  label_map <- setNames(strategy_labels, strategies)
+  
+  .data |> 
+    dplyr::mutate(
+      strategy = dplyr::recode(strategy, !!!label_map)
+    )
 }
 
 
