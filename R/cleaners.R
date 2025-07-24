@@ -224,7 +224,7 @@ drop_bad_bidask <- function(.data){
   
   writeLines(paste0(nrow(.data) - nrow(df), 
                     " (", 
-                    round(nrow(df) / nrow(.data), 2),
+                    round((1 - nrow(df) / nrow(.data)) * 100, 2),
                     "%) observations were dropped due to bid > ask."))
   
   df
