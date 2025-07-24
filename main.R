@@ -185,7 +185,6 @@ c(
 ) |> 
   purrr::walk(.f = source)
 
-a <- Sys.time()
 #   Timed momentum
 timed_portfolios <- readr::read_rds("Data/portfolios.rds") |>
   timed_momentum()
@@ -222,6 +221,7 @@ timed_factors <- readr::read_rds("Data/timed_portfolios.rds") |>
 
 compare_stats(factors, timed_factors, ann_ret) |> 
   comparison_heatmap(.x = ann_ret,
+                     .mid = 0,
                      .path = "Plots/comparison/")
 
 compare_stats(factors, timed_factors, ann_vol) |> 
@@ -241,7 +241,8 @@ compute_alphas(factors, timed_factors) |>
 ##### Plots and Tables #####
 #   Load necessary packages and scripts
 c(
-  "R/startup.R", 
+  "R/startup.R",
+  "R/helpers.R",
   "R/plotters.R"
 ) |> 
   purrr::walk(.f = source)
@@ -269,16 +270,21 @@ read_rds("Data/all_outright.rds") |>
 
 ###### Amount of currencies over time ###### 
 #   Simple plot for amount of currencies over time
-df <- read_rds("Data/all_outright.rds") |> 
-  lustig_returns() |> 
+df <- read_rds("Data/all_outright.rds") |>
+  lustig_returns() |>
   compute_signals()
 
 df |>
   group_by(date) |>
-  mutate(N = n()) |>
+  mutate(N = n()) |> 
+  ungroup() |> 
+  filter(date >= "1990-05-01") |>
+  mutate(date = date %m+% months(1)) |>
   simple_line(.x = date,
               .y = N,
               .title = "Amount of currencies over time",
+              .xlab = "Date",
+              .ylab = "Amount of currencies",
               .path = "Plots/")
 
 ###### Untimed factors (isolated differentials) ###### 
@@ -287,29 +293,31 @@ portfolios <- readr::read_rds("Data/portfolios.rds")
 #   Isolate only the factors, excluding the mid portfolios
 factors <- portfolios |> 
   filter(portfolio %in% c("single", "hml", "1/K")) |> 
-  select(-portfolio)
+  select(-portfolio) |> 
+  rename_strategies()
 
 #   Line plot for untimed factors
 factors |> 
   group_by(strategy) |> 
   mutate(
-    cum_ret = exp( cumsum(ret) ) - 1
+    cum_ret = expm1( cumsum(ret_l) )
   ) |> 
   multiple_lines(
     .x     = date,
-    .y     = cum_ret,
+    .y     = cum_ret * 100,
     .col   = strategy,
     .title = "Cumulative Simple Returns for each Untimed Factor",
     .xlab  = "Date",
-    .ylab  = "Simple Return",
+    .ylab  = "Simple Return (%)",
     .path  = "Plots/"
   )
 
 #   Correlation plot for untimed factors
 factors |> 
+  select(-c(ret_s,curs)) |> 
   pivot_wider(
     names_from = strategy, 
-    values_from = ret
+    values_from = ret_l
   ) |> 
   select(-date) |> 
   cor(
@@ -322,17 +330,26 @@ factors |>
     addCoefasPercent = T,
     order = "AOE",
   )
-title("Correlation among factors", line = 2.5)
+title("Correlation Among Untimed Factors", line = 2, cex.main = 1.4)
 
 factors |> 
-  perf_stats()
+  perf_stats(.ret = ret_l,
+             strategy) |> 
+  dplyr::rename(
+    Strategy        = strategy,
+    `Ann. Ret. (%)` = ann_ret,
+    `Ann. Vol. (%)` = ann_vol,
+    `Sharpe Ratio`  = sharpe
+  ) |> 
+  kbl(format = "html", digits = 2, align = "lccc") |> 
+  kable_classic(full_width = F, font_size = 20, html_font = "Times New Roman")
 
 ###### Untimed portfolios (all portfolios by strategy) ###### 
 #   Line plot for portfolios included in each signal
 portfolios |> 
   group_by(strategy, portfolio) |> 
   mutate(
-    cum_ret  = exp(cumsum(ret)) - 1
+    cum_ret  = exp(cumsum(ret_l)) - 1
   ) |> 
   ungroup() |> 
   group_split(strategy) |> 
