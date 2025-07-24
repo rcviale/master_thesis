@@ -1,3 +1,27 @@
+sample_desc <- function(){
+
+  readr::read_rds("Data/all_outright.rds") |> 
+    dplyr::summarise(
+      min = min(date),
+      max = max(date),
+      .by = from
+    ) |>
+    dplyr::mutate(
+      min = pmax(min, lubridate::make_date(1990, 5, 1))
+    ) |> 
+    dplyr::rename(
+      Currency     = from,
+      `Start Date` = min,
+      `End Date`   = max
+    ) |> 
+    dplyr::arrange(Currency) |> 
+    kableExtra::kbl(booktabs = TRUE, align = "l") |> 
+    kableExtra::kable_styling(latex_options = c("striped", "scale_down", "hold_position"))
+
+}
+
+
+
 alphas_table <- function(.data){
   
   # Define orders
