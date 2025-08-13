@@ -192,7 +192,7 @@ timed_portfolios <- readr::read_rds("Data/portfolios.rds") |>
 timed_portfolios <- readr::read_rds("Data/portfolios.rds") |>
   timed_variance(
     .midspots = readr::read_rds("Data/midspots.rds") |> 
-                   filter(date >= "1990-01-01")) |> 
+      filter(date >= "1990-01-01")) |> 
   bind_rows(timed_portfolios) |> 
   organize_portfolios(.timed = TRUE)
 
@@ -213,30 +213,103 @@ c(
 
 factors <- readr::read_rds("Data/portfolios.rds") |> 
   filter(portfolio %in% c("single", "hml", "1/K")) |> 
-  select(date, strategy, ret = ret_l)
+  select(date, strategy, ret = ret_l) |> 
+  rename_factors()
 
 timed_factors <- readr::read_rds("Data/timed_portfolios.rds") |> 
   filter(portfolio %in% c("single", "hml", "1/K")) |> 
-  select(-portfolio) 
+  select(-portfolio) |> 
+  rename_factors() |> 
+  rename_timings()
 
 compare_stats(factors, timed_factors, ann_ret) |> 
-  comparison_heatmap(.x = ann_ret,
-                     .mid = 0,
-                     .path = "Plots/comparison/")
+  comparison_heatmap(.x     = ann_ret,
+                     .mid   = 0,
+                     .path  = "Plots/comparison/ann_ret",
+                     .title = "Effects of Timing Factors on Annualized Simple Returns (p.p.)",
+                     .xlab  = "Timing Signal")
 
 compare_stats(factors, timed_factors, ann_vol) |> 
   comparison_heatmap(.x = ann_vol,
                      .inverted = TRUE,
                      .mid = 0,
-                     .path = "Plots/comparison/")
+                     .path  = "Plots/comparison/ann_vol",
+                     .title = "Effects of Timing Factors on Annualized Volatility of Simple Returns (p.p.)",
+                     .xlab  = "Timing Signal")
 
 compare_stats(factors, timed_factors, sharpe) |> 
   comparison_heatmap(.x = sharpe,
                      .mid = 0,
-                     .path = "Plots/comparison/")
+                     .path  = "Plots/comparison/sharpe",
+                     .title = "Effects of Timing Factors on Sharpe Ratios",
+                     .xlab  = "Timing Signal")
+
+rets <- compare_stats(factors, timed_factors, ann_ret) |> 
+  dplyr::mutate(ann_ret = ann_ret + dif) |> 
+  dplyr::select(-c(dif, pval))
+
+vols <- compare_stats(factors, timed_factors, ann_vol) |> 
+  dplyr::mutate(ann_vol = ann_vol + dif) |> 
+  dplyr::select(-dif)
+
+orig <- factors |> 
+  perf_stats(.ret = ret, strategy) |> 
+  mutate(timing = "None")
+
+#   Appendix 3
+compare_stats(factors, timed_factors, sharpe) |> 
+  dplyr::mutate(sharpe = sharpe + dif) |> 
+  dplyr::select(-dif) |> 
+  dplyr::left_join(
+    rets,
+    by = dplyr::join_by(strategy, timing)
+  ) |> 
+  dplyr::left_join(
+    vols,
+    by = dplyr::join_by(strategy, timing)
+  ) |> 
+  dplyr::bind_rows(orig) |> 
+  dplyr::arrange(dplyr::desc(sharpe)) |> 
+  dplyr::select(
+    Strategy = strategy,
+    Timing   = timing,
+    `Ann. Ret. (%)` = ann_ret,
+    `Ann. Vol. (%)` = ann_vol,
+    Sharpe = sharpe
+  ) |> 
+  readr::write_rds("Tables/all_performances.rds")
+
+#   Filter only Sharpe ratio increases
+compare_stats(factors, timed_factors, sharpe) |> 
+  mutate(sharpe = sharpe + dif) |> 
+  select(-dif) |> 
+  left_join(
+    factors |> 
+      perf_stats(.ret = ret, strategy) |> 
+      select(strategy, orig_sharpe = sharpe),
+    by = "strategy",
+    relationship = "many-to-one"
+  ) |> 
+  filter(orig_sharpe <= sharpe) |> 
+  mutate(dif = sharpe - orig_sharpe) |> 
+  arrange(desc(dif))
 
 compute_alphas(factors, timed_factors) |> 
-  alphas_table()
+  mutate(pval = ifelse(pval <= 0.05, TRUE, FALSE)) |> 
+  comparison_heatmap(.x = dif, 
+                     .mid = 0,
+                     .title = "Annualized Alphas of Regressions of Timed Factors on Untimed Factors",
+                     .xlab  = "Timing Signal",
+                     .path  = "Plots/comparison/alphas")
+
+compute_alphas(factors, timed_factors) |> 
+  rename(
+    Strategy          = strategy,
+    `Timing Signal`   = timing,
+    Alpha             = dif,
+    `p-value`         = pval
+  ) |> 
+  readr::write_rds("Tables/alphas.rds")
 
 ##### Plots and Tables #####
 #   Load necessary packages and scripts
@@ -246,6 +319,24 @@ c(
   "R/plotters.R"
 ) |> 
   purrr::walk(.f = source)
+
+###### Sample Period per Currency ###### 
+readr::read_rds("Data/all_outright.rds") |> 
+  dplyr::summarise(
+    min = min(date),
+    max = max(date),
+    .by = from
+  ) |>
+  dplyr::mutate(
+    min = pmax(min, lubridate::make_date(1990, 5, 1))
+  ) |> 
+  dplyr::rename(
+    Currency     = from,
+    `Start Date` = min,
+    `End Date`   = max
+  ) |> 
+  dplyr::arrange(Currency) |> 
+  readr::write_rds("Tables/sample_periods.rds")
 
 ###### Individual for each currency ###### 
 #   This chunk will plot the time series for each currency (group). This is to check if any of the time series behaves
@@ -294,7 +385,7 @@ portfolios <- readr::read_rds("Data/portfolios.rds")
 factors <- portfolios |> 
   filter(portfolio %in% c("single", "hml", "1/K")) |> 
   select(-portfolio) |> 
-  rename_strategies()
+  rename_factors()
 
 #   Line plot for untimed factors
 factors |> 
@@ -306,32 +397,35 @@ factors |>
     .x     = date,
     .y     = cum_ret * 100,
     .col   = strategy,
-    .title = "Cumulative Simple Returns for each Untimed Factor",
+    .title = "Cumulative Simple Returns for Untimed Factors",
     .xlab  = "Date",
-    .ylab  = "Simple Return (%)",
+    .ylab  = "Cumulative Simple Return (%)",
+    .colab = "Factor",
     .path  = "Plots/"
   )
 
 #   Correlation plot for untimed factors
-factors |> 
+corr <- factors |> 
   select(-c(ret_s,curs)) |> 
   pivot_wider(
     names_from = strategy, 
     values_from = ret_l
   ) |> 
-  select(-date) |> 
+  select(-date) |>
+  select(`Dollar`, `Dollar Carry`, `CS-Carry`, `TS-Carry`, `CS-Momentum-1m`, `TS-Momentum-1m`, `CS-Momentum-3m`,
+         `TS-Momentum-3m`, `CS-Momentum-6m`, `TS-Momentum-6m`, `CS-Momentum-12m`, `TS-Momentum-12m`, `Naive Multifactor`) |> 
   cor(
     use = "pairwise.complete.obs"
-  ) |> 
-  corrplot::corrplot(
-    method = "color", 
-    type = "lower",
-    addCoef.col = "black",
-    addCoefasPercent = T,
-    order = "AOE",
   )
-title("Correlation Among Untimed Factors", line = 2, cex.main = 1.4)
 
+png("Plots/correlations.png", width = 1000, height = 1000, res = 150)
+
+corr |> 
+  corrplot::corrplot(method = "shade", type = "upper", diag = FALSE, addCoef.col = "black", addCoefasPercent = T)
+
+dev.off()
+
+#   Untimed portfolios performance statistics
 factors |> 
   perf_stats(.ret = ret_l,
              strategy) |> 
@@ -341,16 +435,18 @@ factors |>
     `Ann. Vol. (%)` = ann_vol,
     `Sharpe Ratio`  = sharpe
   ) |> 
-  kbl(format = "html", digits = 2, align = "lccc") |> 
-  kable_classic(full_width = F, font_size = 20, html_font = "Times New Roman")
+  readr::write_rds("Tables/untimed_performance.rds")
 
 ###### Untimed portfolios (all portfolios by strategy) ###### 
 #   Line plot for portfolios included in each signal
-portfolios |> 
+readr::read_rds("Data/portfolios.rds") |> 
   group_by(strategy, portfolio) |> 
   mutate(
-    cum_ret  = exp(cumsum(ret_l)) - 1
+    cum_ret  = exp(cumsum(ret_l)) - 1,
+    
   ) |> 
+  rename_factors() |> 
+  rename_portfolios() |> 
   ungroup() |> 
   group_split(strategy) |> 
   walk(
@@ -360,6 +456,9 @@ portfolios |>
       .y     = cum_ret,
       .color = portfolio,
       .title = strategy,
+      .xlab  = "Date",
+      .ylab  = "Cumulative Simple Return (%)",
+      .colab = "Portfolio",
       .path  = "Plots/by_strategy/"
     )
   )
