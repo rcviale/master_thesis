@@ -410,7 +410,7 @@ organize_portfolios <- function(.data,
 
 timed_momentum <- function(.data,
                            .mom_windows = c(1, 3, 6, 12),
-                           .vol_windows = c(12, 36, 60)) {
+                           .vol_windows = c(36, 60, 120)) {
   
   .data |>
     dplyr::mutate(vol_window = list(.vol_windows)) |>
@@ -549,7 +549,7 @@ timed_variance <- function(.data, .midspots){
 
 
 
-rename_strategies <- function(.data){
+rename_factors <- function(.data){
   
   # Original labels
   strategies <- c("cs_carry", "dol", "dol_carry", "naive", "ts_carry", 
@@ -568,6 +568,53 @@ rename_strategies <- function(.data){
     dplyr::mutate(
       strategy = dplyr::recode(strategy, !!!label_map)
     )
+}
+
+
+
+rename_portfolios <- function(.data){
+  
+  # Original labels
+  original <- c("hml", "long", "short", "1/K", "single", "p2", "p3", "p4")
+  
+  # Nicer labels
+  nicer <- c("HML", "Long", "Short", "Single", "Single", "Portfolio 2", "Portfolio 3", "Portfolio 4")
+  
+  # Named vector for recoding
+  label_map <- setNames(nicer, original)
+  
+  .data |> 
+    dplyr::mutate(
+      portfolio = dplyr::recode(portfolio, !!!label_map)
+    )
+}
+
+
+
+rename_timings <- function(.data){
+  
+  # Original labels
+  timing <- c("mom_1_36", "mom_1_60", "mom_1_120",
+              "mom_3_36", "mom_3_60", "mom_3_120",
+              "mom_6_36", "mom_6_60", "mom_6_120",
+              "mom_12_36", "mom_12_60", "mom_12_120",
+              "rvar", "rvol")
+  
+  # Nicer labels
+  timing_labels <-  c("Momentum-1m-3Y", "Momentum-1m-5Y", "Momentum-1m-10Y",
+                      "Momentum-3m-3Y", "Momentum-3m-5Y", "Momentum-3m-10Y",
+                      "Momentum-6m-3Y", "Momentum-6m-5Y", "Momentum-6m-10Y",
+                      "Momentum-12m-3Y", "Momentum-12m-5Y", "Momentum-12m-10Y",
+                      "RVar", "RVol")
+  
+  # Named vector for recoding
+  label_map <- setNames(timing_labels, timing)
+  
+  .data |> 
+    dplyr::mutate(
+      timing = dplyr::recode(timing, !!!label_map)
+    )
+  
 }
 
 
@@ -595,7 +642,24 @@ perf_stats <- function(.data,
 
 
 
-compare_stats <- function(.factors, .timed, .stat, .ret = ret){
+compare_stats <- function(.factors, .timed, .stat, .ret = ret, .signif = 0.05){
+  
+  if (dplyr::enexpr(.stat) == "ann_ret") {
+    
+    significants <- .timed |> 
+      left_join(
+        .factors,
+        by = dplyr::join_by(date, strategy),
+        relationship = "many-to-one"
+      ) |> 
+      mutate(dif = ret.x - ret.y) |> 
+      select(strategy, timing, dif) |> 
+      summarise(
+        pval = ifelse(t.test(dif)$p.value <= .signif, TRUE, FALSE),
+        .by = c(strategy, timing)
+      ) 
+    
+  }
   
   untimed_stats <- .factors |> 
     perf_stats(
@@ -611,7 +675,7 @@ compare_stats <- function(.factors, .timed, .stat, .ret = ret){
     ) |> 
     select(strategy, timing, {{ .stat }})
   
-  timed_stats |> 
+  res <- timed_stats |> 
     pivot_wider(
       names_from  = timing,
       values_from = {{ .stat }}
@@ -620,15 +684,41 @@ compare_stats <- function(.factors, .timed, .stat, .ret = ret){
       y  = untimed_stats,
       by = join_by(strategy)
     ) |> 
-    select(strategy, {{ .stat }}, mom_1_12, mom_1_36, mom_1_60, mom_3_12, mom_3_36, mom_3_60, mom_6_12, mom_6_36, mom_6_60,
-           mom_12_12, mom_12_36, mom_12_60, rvar, rvol) |> 
+    select(
+      strategy, {{ .stat }},
+      `Momentum-1m-3Y`, `Momentum-1m-5Y`, `Momentum-1m-10Y`,
+      `Momentum-3m-3Y`, `Momentum-3m-5Y`, `Momentum-3m-10Y`,
+      `Momentum-6m-3Y`, `Momentum-6m-5Y`, `Momentum-6m-10Y`,
+      `Momentum-12m-3Y`, `Momentum-12m-5Y`, `Momentum-12m-10Y`,
+      `RVar`, `RVol`
+    ) |> 
     mutate(
       across(
         .cols = -c(strategy, {{ .stat }}),
         .fns  = ~ .x - {{ .stat }}
       )
     ) |> 
-    arrange(desc({{ .stat }}))
+    arrange(desc({{ .stat }})) |> 
+    pivot_longer(
+      -c(strategy, {{ .stat }}),
+      names_to  = "timing",
+      values_to = "dif"
+    ) 
+  
+  if (dplyr::enexpr(.stat) == "ann_ret") {
+    
+    res |> 
+      left_join(
+        significants,
+        by = join_by(strategy, timing),
+        relationship = "many-to-one"
+      )
+     
+  } else {
+    
+    res
+    
+  }
   
 }
 
@@ -665,12 +755,16 @@ compute_alphas <- function(.factors, .timed){
     filter(term == "(Intercept)") |> 
     select(strategy, estimate, p.value) |> 
     mutate(
-      estimate = (exp(12 * estimate) - 1) * 100
+      estimate = (exp(12 * estimate) - 1) * 100,
     ) |> 
     separate(
       col  = strategy,
       into = c("strategy", "timing"),
       sep  = "\\."
+    ) |> 
+    rename(
+      pval = p.value,
+      dif  = estimate
     )
   
 }
