@@ -53,29 +53,33 @@ fromto_scale <- function(.data,
 
 direct_quote <- function(.data,
                          .spread = TRUE){
-  #   This function takes indirect quotes and turns them into direct ones.
+  # This function takes indirect quotes and turns them into direct ones.
   
-  temp <- .data |> 
-    dplyr::pull(from)
+  temp <- .data |>                              # Start from input data (tibble/data.frame)
+    dplyr::pull(from)                           # dplyr: extract the 'from' column as a vector to reuse after swap
   
-  if (.spread == TRUE) {
+  if (.spread == TRUE) {                        # If inputs are spreads
     
     .data |> 
-      dplyr::mutate(
-        px   = -px,
-        from = to,
-        to   = temp,
-        side = dplyr::if_else(side == "bid", "ask", "bid")
+      dplyr::mutate(                            # dplyr: create modified columns
+        px   = -px,                             # Flip sign of spread when inverting quote direction
+        from = to,                              # Swap 'from' and 'to' legs
+        to   = temp,                            # Former 'from' becomes new 'to'
+        side = dplyr::if_else(                  # dplyr: switch bid/ask sides when inverting
+          side == "bid", "ask", "bid"
+        )
       )
     
-  } else { 
+  } else {                                      # Otherwise, inputs are outright levels (not spreads)
     
     .data |> 
-      dplyr::mutate(
-        px   = 1 / px,
-        from = to,
-        to   = temp,
-        side = dplyr::if_else(side == "bid", "ask", "bid")
+      dplyr::mutate(                            # dplyr: create modified columns
+        px   = 1 / px,                          # Invert the outright price to change quotation direction
+        from = to,                              # Swap 'from' and 'to' legs
+        to   = temp,                            # Former 'from' becomes new 'to'
+        side = dplyr::if_else(                  # dplyr: switch bid/ask sides when inverting
+          side == "bid", "ask", "bid"
+        )
       )
     
   }
@@ -86,12 +90,15 @@ direct_quote <- function(.data,
 
 drop_usdgbp <- function(.data,
                         .keep = FALSE){
-  #   This function filters out the USDGBP pair or isolates it.
+  # This function filters out or isolates the USD/GBP currency pair.
+  # Arguments:
+  #   .data: tibble/data.frame containing currency pairs in 'from' and 'to' columns
+  #   .keep: logical; if FALSE (default) removes USDGBP pair, if TRUE keeps only USDGBP pair
   
   if (.keep == FALSE){
     
     .data |> 
-      filter(
+      dplyr::filter(                             # dplyr: keep only rows NOT matching the USD/GBP pair (both directions)
         !(
           (from == "United States Dollar" & to == "United Kingdom Pound") |
             (from == "United Kingdom Pound" & to == "United States Dollar")
@@ -101,7 +108,7 @@ drop_usdgbp <- function(.data,
   } else {
     
     .data |> 
-      filter(
+      dplyr::filter(                             # dplyr: keep only rows that ARE the USD/GBP pair (both directions)
         (from == "United States Dollar" & to == "United Kingdom Pound") |
           (from == "United Kingdom Pound" & to == "United States Dollar")
       )
@@ -109,7 +116,6 @@ drop_usdgbp <- function(.data,
   }
   
 }
-
 
 
 spr_to_outright <- function(.data,
@@ -177,58 +183,72 @@ spr_to_outright <- function(.data,
 cross_to_usd <- function(.data,
                          .cross = usdgbp,
                          .to = "United Kingdom Pound"){
-  #   This function converts all quotes in .from currency to USD. 
-  #   Only for direct quotes (no pair with GBP is indirect, except for USDGBP, which was separately treated).
+  # This function converts all quotes in `.from` currency to USD using a cross rate.
+  # Only applies for direct quotes (no GBP pair is indirect, except USDGBP handled separately).
+  # Args:
+  #   .data  : tibble/data.frame of currency quotes
+  #   .cross : tibble/data.frame containing the USD/GBP (or other cross) rates
+  #   .to    : currency code that is on the 'to' side in .data and matches the cross rate
   
+  # Prepare the cross rate table by removing 'from' and 'to', keeping only px (renamed 'cross')
   .cross <- .cross |> 
-    dplyr::select(-c(from, to), 
-                  cross = px)
+    dplyr::select(                                # dplyr: choose only columns needed for join
+      -c(from, to),                               # remove the currency name columns
+      cross = px                                  # rename px to cross rate
+    )
   
   .data |> 
-    dplyr::filter( # Filter everything that is quoted vs. GBP
+    dplyr::filter(                                # keep only rows where 'to' matches the GBP side (or specified .to)
       to == .to
-    ) |> # C3.1
-    dplyr::select(-to) |> 
-    dplyr::inner_join(
-      .cross,
-      by = dplyr::join_by(date, side, mkt),
-      relationship = "many-to-one"
-    ) |>
-    dplyr::mutate( # C3.2
-      px = px * cross, # GBPXXX * USDGBP = USDXXX
-      to = "United States Dollar"
     ) |> 
-    dplyr::select(-cross)
+    dplyr::select(-to) |>                         # drop 'to' column since we’ll replace it with USD later
+    dplyr::inner_join(                            # join with cross rates table
+      y  = .cross,
+      by = dplyr::join_by(date, side, mkt),       # join on date, side, and market type
+      relationship = "many-to-one"                # each row in .data matches exactly one row in .cross
+    ) |> 
+    dplyr::mutate(
+      px = px * cross,                            # Convert GBPXXX to USDXXX: multiply by USDGBP rate
+      to = "United States Dollar"                 # Set 'to' currency to USD
+    ) |> 
+    dplyr::select(-cross)                         # Remove the temporary 'cross' column
   
 }
 
 
 
+
 drop_bad_bidask <- function(.data){
-  #   This function drops all the observations where bid > ask.
+  # This function removes observations where the bid price is greater than the ask price.
+  # Args:
+  #   .data: tibble/data.frame with 'side' (bid/ask) and 'px' (price) columns
   
   df <- .data |> 
-    tidyr::pivot_wider(
-      names_from  = side,
-      values_from = px
+    tidyr::pivot_wider(                           # tidyr: reshape from long to wide format
+      names_from  = side,                         # create separate columns for 'bid' and 'ask'
+      values_from = px                            # fill them with price values
     ) |> 
-    # Keep only observations where bid < ask or one of them is NA.
-    dplyr::filter(!(bid > ask) | is.na(bid > ask)) |> 
-    tidyr::pivot_longer(
-      cols = c(bid, ask),
-      names_to = "side",
-      values_to = "px"
+    dplyr::filter(                                # keep rows where bid <= ask OR either is missing
+      !(bid > ask) | is.na(bid > ask)
     ) |> 
-    # When pivoting longer the implicit NAs become explicit, so we drop them.
-    tidyr::drop_na(px)
+    tidyr::pivot_longer(                          # reshape back from wide to long format
+      cols      = c(bid, ask),                    # collapse 'bid' and 'ask' columns back into 'side'
+      names_to  = "side",                         # store former column name ('bid'/'ask') in 'side'
+      values_to = "px"                            # store price values in 'px'
+    ) |> 
+    tidyr::drop_na(px)                            # remove rows where price is NA (explicit NAs after pivot_longer)
   
-  writeLines(paste0(nrow(.data) - nrow(df), 
-                    " (", 
-                    round((1 - nrow(df) / nrow(.data)) * 100, 2),
-                    "%) observations were dropped due to bid > ask."))
+  # Print summary of how many observations were dropped
+  base::writeLines(
+    paste0(
+      nrow(.data) - nrow(df),                     # number of dropped rows
+      " (", 
+      round((1 - nrow(df) / nrow(.data)) * 100, 2),# percentage dropped
+      "%) observations were dropped due to bid > ask."
+    )
+  )
   
-  df
-  
+  df                                              # return the cleaned data
 }
 
 

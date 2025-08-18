@@ -244,6 +244,15 @@ compare_stats(factors, timed_factors, sharpe) |>
                      .title = "Effects of Timing Factors on Sharpe Ratios",
                      .xlab  = "Timing Signal")
 
+compute_alphas(factors, timed_factors) |> 
+  mutate(pval = ifelse(pval <= 0.05, TRUE, FALSE)) |> 
+  comparison_heatmap(.x = dif, 
+                     .mid = 0,
+                     .title = "Annualized Alphas of Regressions of Timed Factors on Untimed Factors",
+                     .xlab  = "Timing Signal",
+                     .path  = "Plots/comparison/alphas")
+
+#   Appendix 3: Performance metrics for all strategies
 rets <- compare_stats(factors, timed_factors, ann_ret) |> 
   dplyr::mutate(ann_ret = ann_ret + dif) |> 
   dplyr::select(-c(dif, pval))
@@ -256,7 +265,6 @@ orig <- factors |>
   perf_stats(.ret = ret, strategy) |> 
   mutate(timing = "None")
 
-#   Appendix 3
 compare_stats(factors, timed_factors, sharpe) |> 
   dplyr::mutate(sharpe = sharpe + dif) |> 
   dplyr::select(-dif) |> 
@@ -292,16 +300,9 @@ compare_stats(factors, timed_factors, sharpe) |>
   ) |> 
   filter(orig_sharpe <= sharpe) |> 
   mutate(dif = sharpe - orig_sharpe) |> 
-  arrange(desc(dif))
+  arrange(desc(sharpe))
 
-compute_alphas(factors, timed_factors) |> 
-  mutate(pval = ifelse(pval <= 0.05, TRUE, FALSE)) |> 
-  comparison_heatmap(.x = dif, 
-                     .mid = 0,
-                     .title = "Annualized Alphas of Regressions of Timed Factors on Untimed Factors",
-                     .xlab  = "Timing Signal",
-                     .path  = "Plots/comparison/alphas")
-
+#   Appendix 4:  alphas for all timed strategies
 compute_alphas(factors, timed_factors) |> 
   rename(
     Strategy          = strategy,
