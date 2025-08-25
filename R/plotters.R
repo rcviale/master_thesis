@@ -168,7 +168,7 @@ multiple_lines <- function(.data,
       plot     = p,
       width    = 8,
       height   = 5,
-      dpi      = 300,
+      dpi      = 500,
       bg       = "white"
     ) 
     

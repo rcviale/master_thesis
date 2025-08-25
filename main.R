@@ -394,6 +394,9 @@ factors |>
   mutate(
     cum_ret = expm1( cumsum(ret_l) )
   ) |> 
+  mutate(final_cum_ret = last(cum_ret)) |> 
+  ungroup() |> 
+  mutate(strategy = forcats::fct_reorder(strategy, -final_cum_ret)) |> 
   multiple_lines(
     .x     = date,
     .y     = cum_ret * 100,
