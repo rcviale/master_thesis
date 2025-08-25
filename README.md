@@ -2,7 +2,7 @@
 
 This repository contains the codes for my Master thesis in Quantitative Finance at WU Vienna: "Factor Timing in Currency Markets".
 
-Script main.R contains the code for replicating the thesis' results, while the scripts in folder R contain all the coded functions used to do so.
+Script [`main.R`](./main.R) contains the code for replicating the thesis' results, while the scripts in folder R contain all the coded functions used to do so.
 
 ## Untimed Strategies
 - **Dollar**: $1/N$ of all currencies
